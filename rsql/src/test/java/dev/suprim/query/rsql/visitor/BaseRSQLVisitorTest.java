@@ -1,15 +1,21 @@
 package dev.suprim.query.rsql.visitor;
 
 import cz.jirutka.rsql.parser.RSQLParser;
+import cz.jirutka.rsql.parser.ast.ComparisonNode;
+import cz.jirutka.rsql.parser.ast.ComparisonOperator;
 import cz.jirutka.rsql.parser.ast.Node;
 import dev.suprim.query.dialect.Dialect;
 import dev.suprim.query.exception.DbException;
+import dev.suprim.query.exception.DbRuntimeException;
 import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbTable;
 import dev.suprim.query.model.DbWhere;
+import dev.suprim.query.rsql.handler.OperatorHandler;
+import dev.suprim.query.rsql.handler.RSQLOperatorHandlers;
 import dev.suprim.query.rsql.parser.RSQLParserBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.HashMap;
@@ -18,6 +24,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.*;
 
 /**
  * Tests for BaseRSQLVisitor.
@@ -150,6 +157,84 @@ class BaseRSQLVisitorTest {
             // but is configured in the parser - this is artificial but tests the code path
             parser.parse("name=unknownop=value");
         }).isInstanceOf(Exception.class);
+    }
+
+    @Test
+    void visit_resolveColumnThrowsDbException_shouldWrapInDbRuntimeException() {
+        // Use a column that doesn't exist in the table → buildColumn throws DbException
+        BaseRSQLVisitor visitor = BaseRSQLVisitor.builder()
+                .dbWhere(dbWhere)
+                .dialect(dialect)
+                .build();
+        Node node = parser.parse("nonexistent_column==value");
+
+        assertThatThrownBy(() -> node.accept(visitor))
+                .isInstanceOf(DbRuntimeException.class);
+    }
+
+    @Test
+    void visit_nullOperatorHandler_shouldThrowIllegalArgumentException() {
+        BaseRSQLVisitor visitor = BaseRSQLVisitor.builder()
+                .dbWhere(dbWhere)
+                .dialect(dialect)
+                .build();
+        Node node = parser.parse("name==john");
+
+        try (MockedStatic<RSQLOperatorHandlers> mocked = mockStatic(RSQLOperatorHandlers.class)) {
+            mocked.when(() -> RSQLOperatorHandlers.getOperatorHandler(anyString()))
+                    .thenReturn(null);
+
+            assertThatThrownBy(() -> node.accept(visitor))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("is invalid");
+        }
+    }
+
+    @Test
+    void visit_singleValueHandlerThrowsDbException_shouldWrapInDbRuntimeException() throws DbException {
+        OperatorHandler failingHandler = mock(OperatorHandler.class);
+        when(failingHandler.handle(
+                any(Dialect.class), any(DbColumn.class), any(DbWhere.class),
+                anyString(), any(Class.class), anyMap()
+        )).thenThrow(new DbException(dev.suprim.query.exception.DbErrorCode.INVALID_REQUEST, "test error"));
+
+        BaseRSQLVisitor visitor = BaseRSQLVisitor.builder()
+                .dbWhere(dbWhere)
+                .dialect(dialect)
+                .build();
+        Node node = parser.parse("name==john");
+
+        try (MockedStatic<RSQLOperatorHandlers> mocked = mockStatic(RSQLOperatorHandlers.class)) {
+            mocked.when(() -> RSQLOperatorHandlers.getOperatorHandler(anyString()))
+                    .thenReturn(failingHandler);
+
+            assertThatThrownBy(() -> node.accept(visitor))
+                    .isInstanceOf(DbRuntimeException.class);
+        }
+    }
+
+    @Test
+    void visit_multiValueHandlerThrowsDbException_shouldWrapInDbRuntimeException() throws DbException {
+        OperatorHandler failingHandler = mock(OperatorHandler.class);
+        when(failingHandler.handle(
+                any(Dialect.class), any(DbColumn.class), any(DbWhere.class),
+                anyList(), any(Class.class), anyMap()
+        )).thenThrow(new DbException(dev.suprim.query.exception.DbErrorCode.INVALID_REQUEST, "test error"));
+
+        BaseRSQLVisitor visitor = BaseRSQLVisitor.builder()
+                .dbWhere(dbWhere)
+                .dialect(dialect)
+                .build();
+        // =in= is a multi-value operator
+        Node node = parser.parse("status=in=(active,pending)");
+
+        try (MockedStatic<RSQLOperatorHandlers> mocked = mockStatic(RSQLOperatorHandlers.class)) {
+            mocked.when(() -> RSQLOperatorHandlers.getOperatorHandler(anyString()))
+                    .thenReturn(failingHandler);
+
+            assertThatThrownBy(() -> node.accept(visitor))
+                    .isInstanceOf(DbRuntimeException.class);
+        }
     }
 
     @Test

@@ -1,4 +1,6 @@
 jdk:
   - 21
+before_install:
+  - sdk install maven 3.9.15
 install:
   - mvn install -DskipTests

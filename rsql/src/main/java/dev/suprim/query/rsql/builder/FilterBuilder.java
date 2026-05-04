@@ -6,6 +6,7 @@ import dev.suprim.query.rsql.operators.CustomRSQLOperators;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -236,6 +237,35 @@ public class FilterBuilder {
 		return this;
 	}
 
+	/**
+	 * JSONB contains with a single key-value pair.
+	 * Generates: {@code field=jsonbContain='{"key":"value"}'}.
+	 */
+	public FilterBuilder jsonbContains(String field, String key, String value) {
+		String json = "{\"" + key + "\":\"" + value + "\"}";
+		predicates.add(new Comparison(
+				field,
+				CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
+				List.of(json)
+		));
+		return this;
+	}
+
+	/**
+	 * JSONB contains with a map of key-value pairs.
+	 * Values are serialized as JSON strings (toString for non-String types).
+	 * Generates: {@code field=jsonbContain='{"k1":"v1","k2":"v2"}'}.
+	 */
+	public FilterBuilder jsonbContains(String field, Map<String, Object> map) {
+		String json = mapToJson(map);
+		predicates.add(new Comparison(
+				field,
+				CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
+				List.of(json)
+		));
+		return this;
+	}
+
 	public FilterBuilder jsonbKeyExists(String field, String key) {
 		predicates.add(new Comparison(
 				field,
@@ -277,5 +307,14 @@ public class FilterBuilder {
 
 	public String build() {
 		return new Group(operator, List.copyOf(predicates)).toRsql();
+	}
+
+	// ==================== INTERNAL ====================
+
+	private static String mapToJson(Map<String, Object> map) {
+		String entries = map.entrySet().stream()
+				.map(e -> "\"" + e.getKey() + "\":\"" + e.getValue() + "\"")
+				.collect(Collectors.joining(","));
+		return "{" + entries + "}";
 	}
 }

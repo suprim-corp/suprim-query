@@ -237,7 +237,8 @@ String searchFilter = FilterBuilder.and()
 
 // JSONB operators (PostgreSQL)
 String jsonFilter = FilterBuilder.and()
-        .jsonbContains("metadata", "{\"tier\":\"premium\"}")
+        .jsonbContains("metadata", "tier", "premium")
+        .jsonbContains("config", Map.of("active", true, "plan", "annual"))
         .jsonbKeyExists("settings", "notifications")
         .build();
 

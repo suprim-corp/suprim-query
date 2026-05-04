@@ -7,7 +7,9 @@ import dev.suprim.query.rsql.builder.FilterBuilder.Raw;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -221,6 +223,21 @@ class FilterBuilderTest {
 		void jsonbContains_shouldUseJsonbContainOperator() {
 			String result = FilterBuilder.and().jsonbContains("metadata", "{\"key\":\"val\"}").build();
 			assertThat(result).isEqualTo("metadata=jsonbContain='{\"key\":\"val\"}'");
+		}
+
+		@Test
+		void jsonbContains_keyValue_shouldSerializeAsJson() {
+			String result = FilterBuilder.and().jsonbContains("metadata", "tier", "premium").build();
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"tier\":\"premium\"}'");
+		}
+
+		@Test
+		void jsonbContains_map_shouldSerializeAllEntries() {
+			Map<String, Object> map = new LinkedHashMap<>();
+			map.put("tier", "premium");
+			map.put("active", true);
+			String result = FilterBuilder.and().jsonbContains("metadata", map).build();
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"tier\":\"premium\",\"active\":\"true\"}'");
 		}
 
 		@Test

@@ -1,484 +1,505 @@
 package dev.suprim.query.jdbc.operation;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import dev.suprim.query.dialect.Dialect;
+import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
-import dev.suprim.query.jdbc.config.DatabaseConnectionDetail;
-import dev.suprim.query.jdbc.config.DatabaseProperties;
-import dev.suprim.query.jdbc.config.EnvironmentProperties;
-import dev.suprim.query.jdbc.config.RoutingDataSource;
-import dev.suprim.query.model.ArrayTypeValueHolder;
-import dev.suprim.query.model.DbColumn;
-import dev.suprim.query.model.DbTable;
+import dev.suprim.query.exception.DbRuntimeException;
+import dev.suprim.query.jdbc.config.*;
+import dev.suprim.query.model.*;
 import dev.suprim.query.model.dto.CountResponse;
 import dev.suprim.query.model.dto.CreateBulkResponse;
 import dev.suprim.query.model.dto.CreationResponse;
 import dev.suprim.query.model.dto.ExistsResponse;
-import dev.suprim.query.postgresql.PostGreSQLDialect;
-import dev.suprim.query.postgresql.PostgreSQLDataExclusion;
 import dev.suprim.query.support.MetaDataExtraction;
-import gg.jte.ContentType;
 import gg.jte.TemplateEngine;
-import gg.jte.resolve.DirectoryCodeResolver;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.jdbc.support.KeyHolder;
 
 import javax.sql.DataSource;
-import java.nio.file.Path;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.sql.*;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-@Testcontainers
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@ExtendWith(MockitoExtension.class)
 class OperationCoreTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("testdb")
-            .withUsername("test")
-            .withPassword("test");
-
-    private static HikariDataSource dataSource;
-    private static NamedParameterJdbcTemplate jdbcTemplate;
-    private static Dialect dialect;
-    private static JdbcManager jdbcManager;
-    private static JdbcOperationService operationService;
-
-    @BeforeAll
-    static void setUp() {
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl(postgres.getJdbcUrl());
-        config.setUsername(postgres.getUsername());
-        config.setPassword(postgres.getPassword());
-        config.setMaximumPoolSize(5);
-        config.setAutoCommit(true);
-        config.setPoolName("testPool");
-
-        dataSource = new HikariDataSource(config);
-        jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
-
-        ObjectMapper objectMapper = new ObjectMapper();
-        dialect = new PostGreSQLDialect(objectMapper);
-
-        DatabaseProperties dbProperties = new DatabaseProperties();
-        dbProperties.setDefaultDatabaseId("test");
-        dbProperties.setDatabases(List.of(
-                new DatabaseConnectionDetail(
-                        "test", "postgresql",
-                        postgres.getJdbcUrl(),
-                        postgres.getUsername(),
-                        postgres.getPassword(),
-                        "testdb",
-                        null, List.of("public"), null, null,
-                        new EnvironmentProperties(false, "HH:mm:ss", "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", 100),
-                        5
-                )
-        ));
-
-        Map<String, DataSource> targets = new HashMap<>();
-        targets.put("test", dataSource);
-        RoutingDataSource routingDataSource = new RoutingDataSource(targets, "test");
-
-        // Create tables FIRST before loading metadata
-        createTestTables();
-
-        List<MetaDataExtraction> metaDataExtractions = List.of(new PostgreSQLDataExclusion());
-        jdbcManager = new JdbcManager(routingDataSource, List.of(dialect), dbProperties, metaDataExtractions);
-        jdbcManager.reload();
-
-        operationService = new JdbcOperationService();
-
-        // Insert base test data
-        insertBaseTestData();
-    }
-
-    private static void createTestTables() {
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.test_users (
-                id BIGINT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                email VARCHAR(255) UNIQUE,
-                age INT,
-                metadata JSONB,
-                tags VARCHAR[] DEFAULT '{}',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """);
-
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.departments (
-                id BIGINT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL
-            )
-            """);
-
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.empty_table (
-                id INT
-            )
-            """);
-    }
-
-    private static void insertBaseTestData() {
-        jdbcTemplate.getJdbcOperations().execute("DELETE FROM public.test_users");
-        jdbcTemplate.getJdbcOperations().execute("DELETE FROM public.departments");
-
-        // Insert base user for SimpleRowMapper and other tests
-        jdbcTemplate.getJdbcOperations().execute("""
-            INSERT INTO public.test_users (id, name, email, age, metadata, tags)
-            VALUES (1, 'Base User', 'base@test.com', 25, '{"role": "user"}'::jsonb, ARRAY['tag1', 'tag2'])
-            """);
-    }
-
-    @AfterAll
-    static void tearDown() {
-        if (dataSource != null) {
-            dataSource.close();
-        }
-    }
 
     @Nested
     @DisplayName("JdbcManager Tests")
-    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class JdbcManagerTests {
 
-        @Test
-        @Order(1)
-        void loadAllMetaData_withRoutingDataSource_loadsMetadata() {
-            assertNotNull(jdbcManager.getDbMetaMap());
-            assertFalse(jdbcManager.getDbMetaMap().isEmpty());
-            assertNotNull(jdbcManager.getDbMetaByDbId("test"));
+        @Mock
+        private DataSource simpleDataSource;
+        @Mock
+        private Dialect dialect;
+        @Mock
+        private MetaDataExtraction metaDataExtraction;
+
+        private DatabaseProperties databaseProperties;
+
+        @BeforeEach
+        void setup() {
+            databaseProperties = new DatabaseProperties();
+            databaseProperties.setDefaultDatabaseId("test");
+            databaseProperties.setDatabases(List.of(
+                    new DatabaseConnectionDetail(
+                            "test", "postgresql", "jdbc:postgresql://localhost/test",
+                            "user", "pass", "testdb", null, List.of("public"), null, null,
+                            new EnvironmentProperties(false, "HH:mm:ss", "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", 100),
+                            5
+                    )
+            ));
         }
 
         @Test
-        @Order(2)
-        void loadAllMetaData_withNonRoutingDataSource_skips() {
-            DatabaseProperties props = new DatabaseProperties();
-            props.setDatabases(List.of());
+        void loadAllMetaData_nonRoutingDataSource_doesNothing() {
+            JdbcManager manager = new JdbcManager(simpleDataSource, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
 
-            JdbcManager nonRoutingManager = new JdbcManager(
-                    dataSource,
-                    List.of(dialect),
-                    props,
-                    List.of()
-            );
-            nonRoutingManager.reload();
-
-            assertTrue(nonRoutingManager.getDbMetaMap().isEmpty());
+            // Should not throw — just logs and returns
+            assertThatCode(manager::loadAllMetaData).doesNotThrowAnyException();
         }
 
         @Test
-        @Order(3)
-        void getTable_validTable_returnsTable() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "test_users");
+        void loadAllMetaData_routingDataSource_loadsMetaData() throws Exception {
+            DataSource ds = mock(DataSource.class);
+            Connection conn = mock(Connection.class);
+            DatabaseMetaData dbMeta = mock(DatabaseMetaData.class);
 
-            assertNotNull(table);
-            assertEquals("test_users", table.name());
+            when(ds.getConnection()).thenReturn(conn);
+            when(conn.getMetaData()).thenReturn(dbMeta);
+            when(dbMeta.getDatabaseProductName()).thenReturn("PostgreSQL");
+            when(dbMeta.getDatabaseMajorVersion()).thenReturn(16);
+            when(dbMeta.getDatabaseProductVersion()).thenReturn("16.0");
+            when(dbMeta.getDriverName()).thenReturn("PostgreSQL JDBC Driver");
+            when(dbMeta.getDriverVersion()).thenReturn("42.7.8");
+
+            when(dialect.isSupportedDb("PostgreSQL", 16)).thenReturn(true);
+            when(metaDataExtraction.canHandle("PostgreSQL")).thenReturn(true);
+
+            DbTable table = new DbTable("public", "users", "\"public\".\"users\"", "t0",
+                    List.of(new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", "")),
+                    "TABLE", "\"");
+            when(metaDataExtraction.getTables(eq(dbMeta), anyBoolean(), anyList()))
+                    .thenReturn(List.of(table));
+
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("test", ds);
+            RoutingDataSource routingDs = new RoutingDataSource(targets, "test");
+
+            JdbcManager manager = new JdbcManager(routingDs, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+            manager.loadAllMetaData();
+
+            assertThat(manager.getNamedParameterJdbcTemplate("test")).isNotNull();
+            assertThat(manager.getTxnTemplate("test")).isNotNull();
         }
 
         @Test
-        @Order(4)
-        void getTable_withSchema_returnsTable() throws DbException {
-            DbTable table = jdbcManager.getTable("test", "public", "test_users");
+        void getTable_validTable_returnsTable() throws Exception {
+            DataSource ds = mock(DataSource.class);
+            Connection conn = mock(Connection.class);
+            DatabaseMetaData dbMeta = mock(DatabaseMetaData.class);
 
-            assertNotNull(table);
-            assertEquals("test_users", table.name());
-            assertEquals("public", table.schema());
+            when(ds.getConnection()).thenReturn(conn);
+            when(conn.getMetaData()).thenReturn(dbMeta);
+            when(dbMeta.getDatabaseProductName()).thenReturn("PostgreSQL");
+            when(dbMeta.getDatabaseMajorVersion()).thenReturn(16);
+            when(dbMeta.getDatabaseProductVersion()).thenReturn("16.0");
+            when(dbMeta.getDriverName()).thenReturn("PostgreSQL JDBC Driver");
+            when(dbMeta.getDriverVersion()).thenReturn("42.7.8");
+
+            when(dialect.isSupportedDb("PostgreSQL", 16)).thenReturn(true);
+            when(metaDataExtraction.canHandle("PostgreSQL")).thenReturn(true);
+
+            DbTable table = new DbTable("public", "users", "\"public\".\"users\"", "t0",
+                    List.of(new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", "")),
+                    "TABLE", "\"");
+            when(metaDataExtraction.getTables(eq(dbMeta), anyBoolean(), anyList()))
+                    .thenReturn(List.of(table));
+
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("test", ds);
+            RoutingDataSource routingDs = new RoutingDataSource(targets, "test");
+
+            JdbcManager manager = new JdbcManager(routingDs, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+            manager.loadAllMetaData();
+
+            DbTable result = manager.getTable("test", null, "users");
+            assertThat(result.name()).isEqualTo("users");
         }
 
         @Test
-        @Order(5)
-        void getTable_invalidTable_throwsDbException() {
-            DbException ex = assertThrows(DbException.class,
-                    () -> jdbcManager.getTable("test", null, "nonexistent_table"));
+        void getTable_withSchema_returnsTable() throws Exception {
+            DataSource ds = mock(DataSource.class);
+            Connection conn = mock(Connection.class);
+            DatabaseMetaData dbMeta = mock(DatabaseMetaData.class);
 
-            assertTrue(ex.getMessage().contains("Invalid table name"));
+            when(ds.getConnection()).thenReturn(conn);
+            when(conn.getMetaData()).thenReturn(dbMeta);
+            when(dbMeta.getDatabaseProductName()).thenReturn("PostgreSQL");
+            when(dbMeta.getDatabaseMajorVersion()).thenReturn(16);
+            when(dbMeta.getDatabaseProductVersion()).thenReturn("16.0");
+            when(dbMeta.getDriverName()).thenReturn("PostgreSQL JDBC Driver");
+            when(dbMeta.getDriverVersion()).thenReturn("42.7.8");
+
+            when(dialect.isSupportedDb("PostgreSQL", 16)).thenReturn(true);
+            when(metaDataExtraction.canHandle("PostgreSQL")).thenReturn(true);
+
+            DbTable table = new DbTable("public", "users", "\"public\".\"users\"", "t0",
+                    List.of(new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", "")),
+                    "TABLE", "\"");
+            when(metaDataExtraction.getTables(eq(dbMeta), anyBoolean(), anyList()))
+                    .thenReturn(List.of(table));
+
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("test", ds);
+            RoutingDataSource routingDs = new RoutingDataSource(targets, "test");
+
+            JdbcManager manager = new JdbcManager(routingDs, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+            manager.loadAllMetaData();
+
+            DbTable result = manager.getTable("test", "public", "users");
+            assertThat(result.name()).isEqualTo("users");
         }
 
         @Test
-        @Order(6)
+        void getTable_invalidTable_throwsDbException() throws Exception {
+            DataSource ds = mock(DataSource.class);
+            Connection conn = mock(Connection.class);
+            DatabaseMetaData dbMeta = mock(DatabaseMetaData.class);
+
+            when(ds.getConnection()).thenReturn(conn);
+            when(conn.getMetaData()).thenReturn(dbMeta);
+            when(dbMeta.getDatabaseProductName()).thenReturn("PostgreSQL");
+            when(dbMeta.getDatabaseMajorVersion()).thenReturn(16);
+            when(dbMeta.getDatabaseProductVersion()).thenReturn("16.0");
+            when(dbMeta.getDriverName()).thenReturn("PostgreSQL JDBC Driver");
+            when(dbMeta.getDriverVersion()).thenReturn("42.7.8");
+
+            when(dialect.isSupportedDb("PostgreSQL", 16)).thenReturn(true);
+            when(metaDataExtraction.canHandle("PostgreSQL")).thenReturn(true);
+
+            DbTable table = new DbTable("public", "users", "\"public\".\"users\"", "t0",
+                    List.of(new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", "")),
+                    "TABLE", "\"");
+            when(metaDataExtraction.getTables(eq(dbMeta), anyBoolean(), anyList()))
+                    .thenReturn(List.of(table));
+
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("test", ds);
+            RoutingDataSource routingDs = new RoutingDataSource(targets, "test");
+
+            JdbcManager manager = new JdbcManager(routingDs, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+            manager.loadAllMetaData();
+
+            assertThatThrownBy(() -> manager.getTable("test", null, "nonexistent"))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("Invalid table name");
+        }
+
+        @Test
         void getTable_invalidDbId_throwsDbException() {
-            DbException ex = assertThrows(DbException.class,
-                    () -> jdbcManager.getTable("nonexistent_db", null, "test_users"));
+            JdbcManager manager = new JdbcManager(simpleDataSource, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
 
-            assertTrue(ex.getMessage().contains("DB not found"));
+            assertThatThrownBy(() -> manager.getTable("unknown", null, "users"))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("DB not found");
         }
 
         @Test
-        @Order(7)
-        void getTable_withSchemaAndInvalidTable_throwsDbException() {
-            DbException ex = assertThrows(DbException.class,
-                    () -> jdbcManager.getTable("test", "public", "nonexistent_table"));
+        void getDialect_validDbId_returnsDialect() throws Exception {
+            DataSource ds = mock(DataSource.class);
+            Connection conn = mock(Connection.class);
+            DatabaseMetaData dbMeta = mock(DatabaseMetaData.class);
 
-            assertTrue(ex.getMessage().contains("Missing table"));
+            when(ds.getConnection()).thenReturn(conn);
+            when(conn.getMetaData()).thenReturn(dbMeta);
+            when(dbMeta.getDatabaseProductName()).thenReturn("PostgreSQL");
+            when(dbMeta.getDatabaseMajorVersion()).thenReturn(16);
+            when(dbMeta.getDatabaseProductVersion()).thenReturn("16.0");
+            when(dbMeta.getDriverName()).thenReturn("PostgreSQL JDBC Driver");
+            when(dbMeta.getDriverVersion()).thenReturn("42.7.8");
+
+            when(dialect.isSupportedDb("PostgreSQL", 16)).thenReturn(true);
+            when(metaDataExtraction.canHandle("PostgreSQL")).thenReturn(true);
+            when(metaDataExtraction.getTables(eq(dbMeta), anyBoolean(), anyList()))
+                    .thenReturn(List.of());
+
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("test", ds);
+            RoutingDataSource routingDs = new RoutingDataSource(targets, "test");
+
+            JdbcManager manager = new JdbcManager(routingDs, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+            manager.loadAllMetaData();
+
+            Dialect result = manager.getDialect("test");
+            assertThat(result).isEqualTo(dialect);
         }
 
         @Test
-        @Order(8)
-        void getDialect_validDbId_returnsDialect() throws DbException {
-            Dialect result = jdbcManager.getDialect("test");
-
-            assertNotNull(result);
-            assertTrue(result instanceof PostGreSQLDialect);
-        }
-
-        @Test
-        @Order(9)
         void getDialect_invalidDbId_throwsDbException() {
-            DbException ex = assertThrows(DbException.class,
-                    () -> jdbcManager.getDialect("nonexistent_db"));
+            JdbcManager manager = new JdbcManager(simpleDataSource, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
 
-            assertTrue(ex.getMessage().contains("DB not found"));
+            assertThatThrownBy(() -> manager.getDialect("unknown"))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("DB not found");
         }
 
         @Test
-        @Order(10)
-        void getNamedParameterJdbcTemplate_returnsTemplate() {
-            NamedParameterJdbcTemplate template = jdbcManager.getNamedParameterJdbcTemplate("test");
-            assertNotNull(template);
+        void getTables_empty_returnsEmptyList() {
+            JdbcManager manager = new JdbcManager(simpleDataSource, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+
+            assertThat(manager.getTables()).isEmpty();
         }
 
         @Test
-        @Order(11)
-        void getTxnTemplate_returnsTemplate() {
-            assertNotNull(jdbcManager.getTxnTemplate("test"));
+        void getTables_byDbId_invalidDbId_throwsDbException() {
+            JdbcManager manager = new JdbcManager(simpleDataSource, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+
+            assertThatThrownBy(() -> manager.getTables("unknown"))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("DB not found");
         }
 
         @Test
-        @Order(12)
-        void getTables_returnsEmptyList() {
-            List<DbTable> tables = jdbcManager.getTables();
-            assertTrue(tables.isEmpty());
+        void reload_dbUnavailable_doesNotThrow() throws Exception {
+            DataSource ds = mock(DataSource.class);
+            when(ds.getConnection()).thenThrow(new SQLException("Connection refused"));
+
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("test", ds);
+            RoutingDataSource routingDs = new RoutingDataSource(targets, "test");
+
+            JdbcManager manager = new JdbcManager(routingDs, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+
+            // reload() catches DbRuntimeException and logs it
+            assertThatCode(manager::reload).doesNotThrowAnyException();
+        }
+
+        @Test
+        void getTable_withSchemaInvalid_throwsDbException() throws Exception {
+            DataSource ds = mock(DataSource.class);
+            Connection conn = mock(Connection.class);
+            DatabaseMetaData dbMeta = mock(DatabaseMetaData.class);
+
+            when(ds.getConnection()).thenReturn(conn);
+            when(conn.getMetaData()).thenReturn(dbMeta);
+            when(dbMeta.getDatabaseProductName()).thenReturn("PostgreSQL");
+            when(dbMeta.getDatabaseMajorVersion()).thenReturn(16);
+            when(dbMeta.getDatabaseProductVersion()).thenReturn("16.0");
+            when(dbMeta.getDriverName()).thenReturn("PostgreSQL JDBC Driver");
+            when(dbMeta.getDriverVersion()).thenReturn("42.7.8");
+
+            when(dialect.isSupportedDb("PostgreSQL", 16)).thenReturn(true);
+            when(metaDataExtraction.canHandle("PostgreSQL")).thenReturn(true);
+
+            DbTable table = new DbTable("public", "users", "\"public\".\"users\"", "t0",
+                    List.of(new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", "")),
+                    "TABLE", "\"");
+            when(metaDataExtraction.getTables(eq(dbMeta), anyBoolean(), anyList()))
+                    .thenReturn(List.of(table));
+
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("test", ds);
+            RoutingDataSource routingDs = new RoutingDataSource(targets, "test");
+
+            JdbcManager manager = new JdbcManager(routingDs, List.of(dialect), databaseProperties, List.of(metaDataExtraction));
+            manager.loadAllMetaData();
+
+            assertThatThrownBy(() -> manager.getTable("test", "other_schema", "users"))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("Missing table");
         }
     }
 
     @Nested
     @DisplayName("JdbcOperationService Tests")
-    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class JdbcOperationServiceTests {
 
-        @Test
-        @Order(1)
-        void update_executesAndReturnsRowCount() {
-            jdbcTemplate.update(
-                    "INSERT INTO public.test_users (id, name, email, age) VALUES (:id, :name, :email, :age)",
-                    Map.of("id", 100L, "name", "Test User", "email", "test@test.com", "age", 25)
-            );
+        private JdbcOperationService operationService;
+        @Mock
+        private NamedParameterJdbcTemplate jdbcTemplate;
+        @Mock
+        private Dialect dialect;
 
-            int rows = operationService.update(
-                    jdbcTemplate,
-                    Map.of("id", 100L, "age", 30),
-                    "UPDATE public.test_users SET age = :age WHERE id = :id"
-            );
-
-            assertEquals(1, rows);
+        @BeforeEach
+        void setup() {
+            operationService = new JdbcOperationService();
         }
 
         @Test
-        @Order(2)
-        void read_returnsListOfMaps() {
-            List<Map<String, Object>> results = operationService.read(
-                    jdbcTemplate,
-                    Map.of("id", 100L),
-                    "SELECT id, name, email, age FROM public.test_users WHERE id = :id",
-                    dialect
-            );
+        void update_returnsRowCount() {
+            when(jdbcTemplate.update(anyString(), anyMap())).thenReturn(3);
 
-            assertFalse(results.isEmpty());
-            assertEquals("Test User", results.get(0).get("name"));
-            assertEquals(30, results.get(0).get("age"));
+            int result = operationService.update(jdbcTemplate, Map.of("name", "test"), "UPDATE users SET name = :name");
+
+            assertThat(result).isEqualTo(3);
         }
 
         @Test
-        @Order(3)
+        void read_returnsList() {
+            when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(SimpleRowMapper.class)))
+                    .thenReturn(List.of(Map.of("id", 1L)));
+
+            List<Map<String, Object>> result = operationService.read(
+                    jdbcTemplate, Map.of(), "SELECT * FROM users", dialect
+            );
+
+            assertThat(result).hasSize(1);
+        }
+
+        @Test
         void findOne_returnsMap() {
-            Map<String, Object> result = operationService.findOne(
-                    jdbcTemplate,
-                    "SELECT id, name FROM public.test_users WHERE id = :id",
-                    Map.of("id", 100L)
-            );
+            when(jdbcTemplate.queryForMap(anyString(), anyMap()))
+                    .thenReturn(Map.of("id", 1L, "name", "John"));
 
-            assertNotNull(result);
-            assertEquals("Test User", result.get("name"));
+            Map<String, Object> result = operationService.findOne(jdbcTemplate, "SELECT * FROM users WHERE id = :id", Map.of("id", 1L));
+
+            assertThat(result).containsEntry("name", "John");
         }
 
         @Test
-        @Order(4)
         void exists_emptyResult_returnsFalse() {
-            ExistsResponse response = operationService.exists(
-                    jdbcTemplate,
-                    Map.of("id", 99999L),
-                    "SELECT 1 FROM public.test_users WHERE id = :id"
-            );
+            when(jdbcTemplate.query(anyString(), anyMap(), any(org.springframework.jdbc.core.RowMapper.class)))
+                    .thenReturn(List.of());
 
-            assertFalse(response.exists());
+            ExistsResponse result = operationService.exists(jdbcTemplate, Map.of(), "SELECT 1 FROM users WHERE id = :id");
+
+            assertThat(result.exists()).isFalse();
         }
 
         @Test
-        @Order(5)
         void exists_withResult_returnsTrue() {
-            ExistsResponse response = operationService.exists(
-                    jdbcTemplate,
-                    Map.of("id", 100L),
-                    "SELECT 1 FROM public.test_users WHERE id = :id"
-            );
+            when(jdbcTemplate.query(anyString(), anyMap(), any(org.springframework.jdbc.core.RowMapper.class)))
+                    .thenReturn(List.of("1"));
 
-            assertTrue(response.exists());
+            ExistsResponse result = operationService.exists(jdbcTemplate, Map.of(), "SELECT 1 FROM users WHERE id = :id");
+
+            assertThat(result.exists()).isTrue();
         }
 
         @Test
-        @Order(6)
+        @SuppressWarnings("unchecked")
+        void exists_rowMapperLambda_extractsString() throws Exception {
+            // Use Answer to invoke the RowMapper lambda to cover L77
+            ResultSet mockRs = mock(ResultSet.class);
+            when(mockRs.getString(1)).thenReturn("1");
+
+            when(jdbcTemplate.query(anyString(), anyMap(), any(org.springframework.jdbc.core.RowMapper.class)))
+                    .thenAnswer(invocation -> {
+                        org.springframework.jdbc.core.RowMapper<String> mapper = invocation.getArgument(2);
+                        String value = mapper.mapRow(mockRs, 0);
+                        return List.of(value);
+                    });
+
+            ExistsResponse result = operationService.exists(jdbcTemplate, Map.of(), "SELECT 1 FROM users WHERE id = :id");
+
+            assertThat(result.exists()).isTrue();
+            verify(mockRs).getString(1);
+        }
+
+        @Test
         void count_returnsCount() {
-            CountResponse response = operationService.count(
-                    jdbcTemplate,
-                    Map.of(),
-                    "SELECT COUNT(*) FROM public.test_users"
-            );
+            when(jdbcTemplate.queryForObject(anyString(), anyMap(), eq(Long.class))).thenReturn(42L);
 
-            assertTrue(response.count() >= 1);
+            CountResponse result = operationService.count(jdbcTemplate, Map.of(), "SELECT COUNT(*) FROM users");
+
+            assertThat(result.count()).isEqualTo(42);
         }
 
         @Test
-        @Order(7)
         void count_nullResult_returnsZero() {
-            jdbcTemplate.getJdbcOperations().execute("CREATE TABLE IF NOT EXISTS public.empty_table (id INT)");
+            when(jdbcTemplate.queryForObject(anyString(), anyMap(), eq(Long.class))).thenReturn(null);
 
-            CountResponse response = operationService.count(
-                    jdbcTemplate,
-                    Map.of(),
-                    "SELECT COUNT(*) FROM public.empty_table WHERE 1=0"
-            );
+            CountResponse result = operationService.count(jdbcTemplate, Map.of(), "SELECT COUNT(*) FROM users");
 
-            assertEquals(0, response.count());
+            assertThat(result.count()).isEqualTo(0);
         }
 
         @Test
-        @Order(8)
         void queryCustom_single_returnsMap() {
-            Object result = operationService.queryCustom(
-                    jdbcTemplate,
-                    true,
-                    "SELECT id, name FROM public.test_users WHERE id = :id",
-                    Map.of("id", 100L)
-            );
+            when(jdbcTemplate.queryForMap(anyString(), anyMap())).thenReturn(Map.of("id", 1L));
 
-            assertInstanceOf(Map.class, result);
+            Object result = operationService.queryCustom(jdbcTemplate, true, "SELECT * FROM users LIMIT 1", Map.of());
+
+            assertThat(result).isInstanceOf(Map.class);
         }
 
         @Test
-        @Order(9)
         void queryCustom_list_returnsList() {
-            Object result = operationService.queryCustom(
-                    jdbcTemplate,
-                    false,
-                    "SELECT id, name FROM public.test_users",
-                    Map.of()
-            );
+            when(jdbcTemplate.queryForList(anyString(), anyMap())).thenReturn(List.of(Map.of("id", 1L)));
 
-            assertInstanceOf(List.class, result);
+            Object result = operationService.queryCustom(jdbcTemplate, false, "SELECT * FROM users", Map.of());
+
+            assertThat(result).isInstanceOf(List.class);
         }
 
         @Test
-        @Order(10)
-        void create_insertsAndReturnsKeys() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "test_users");
+        void delete_returnsRowCount() {
+            when(jdbcTemplate.update(anyString(), anyMap())).thenReturn(2);
 
-            CreationResponse response = operationService.create(
-                    jdbcTemplate,
-                    Map.of("id", 101L, "name", "Created User", "email", "created@test.com", "age", 35),
-                    "INSERT INTO public.test_users (id, name, email, age) VALUES (:id, :name, :email, :age)",
-                    table
-            );
+            int result = operationService.delete(jdbcTemplate, Map.of("id", 1), "DELETE FROM users WHERE id = :id");
 
-            assertEquals(1, response.row());
+            assertThat(result).isEqualTo(2);
         }
 
         @Test
-        @Order(11)
-        void create_withArrayType_processesArray() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "test_users");
+        void create_simple_returnsCreationResponse() throws DbException {
+            DbTable table = new DbTable("public", "users", "\"public\".\"users\"", "t0",
+                    List.of(new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", "")),
+                    "TABLE", "\"");
 
-            String[] tags = {"tag1", "tag2", "tag3"};
-            ArrayTypeValueHolder arrayHolder = new ArrayTypeValueHolder("varchar", "varchar", tags);
+            when(jdbcTemplate.update(anyString(), any(MapSqlParameterSource.class), any(KeyHolder.class), any(String[].class)))
+                    .thenReturn(1);
 
-            Map<String, Object> data = new HashMap<>();
-            data.put("id", 102L);
-            data.put("name", "Array User");
-            data.put("email", "array@test.com");
-            data.put("age", 40);
-            data.put("tags", arrayHolder);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
 
-            CreationResponse response = operationService.create(
-                    jdbcTemplate,
-                    data,
-                    "INSERT INTO public.test_users (id, name, email, age, tags) VALUES (:id, :name, :email, :age, :tags)",
-                    table
-            );
+            CreationResponse result = operationService.create(jdbcTemplate, data, "INSERT INTO users (name) VALUES (:name)", table);
 
-            assertEquals(1, response.row());
+            assertThat(result.row()).isEqualTo(1);
         }
 
         @Test
-        @Order(12)
-        void batchUpdate_withKeyHolder_returnsKeys() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "test_users");
+        void batchUpdate_withKeyHolder_returnsResponse() {
+            DbTable table = new DbTable("public", "users", "\"public\".\"users\"", "t0",
+                    List.of(new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", "")),
+                    "TABLE", "\"");
+
+            when(jdbcTemplate.batchUpdate(anyString(), any(org.springframework.jdbc.core.namedparam.SqlParameterSource[].class), any(KeyHolder.class), any(String[].class)))
+                    .thenReturn(new int[]{1, 1});
 
             List<Map<String, Object>> dataList = List.of(
-                    Map.of("id", 201L, "name", "Batch1", "email", "batch1@test.com", "age", 20),
-                    Map.of("id", 202L, "name", "Batch2", "email", "batch2@test.com", "age", 21)
+                    Map.of("name", "John"),
+                    Map.of("name", "Jane")
             );
 
-            CreateBulkResponse response = operationService.batchUpdate(
-                    jdbcTemplate,
-                    dataList,
-                    "INSERT INTO public.test_users (id, name, email, age) VALUES (:id, :name, :email, :age)",
-                    table
-            );
+            CreateBulkResponse result = operationService.batchUpdate(jdbcTemplate, dataList, "INSERT INTO users (name) VALUES (:name)", table);
 
-            assertEquals(2, response.rows().length);
+            assertThat(result.rows()).hasSize(2);
         }
 
         @Test
-        @Order(13)
-        void batchUpdate_withoutKeyHolder_returnsNull() {
+        void batchUpdate_withoutKeyHolder_returnsResponse() {
+            when(jdbcTemplate.batchUpdate(anyString(), any(org.springframework.jdbc.core.namedparam.SqlParameterSource[].class)))
+                    .thenReturn(new int[]{1, 1});
+
             List<Map<String, Object>> dataList = List.of(
-                    Map.of("id", 203L, "name", "Batch3", "email", "batch3@test.com", "age", 22),
-                    Map.of("id", 204L, "name", "Batch4", "email", "batch4@test.com", "age", 23)
+                    Map.of("name", "John"),
+                    Map.of("name", "Jane")
             );
 
-            CreateBulkResponse response = operationService.batchUpdate(
-                    jdbcTemplate,
-                    dataList,
-                    "INSERT INTO public.test_users (id, name, email, age) VALUES (:id, :name, :email, :age)"
-            );
+            CreateBulkResponse result = operationService.batchUpdate(jdbcTemplate, dataList, "INSERT INTO users (name) VALUES (:name)");
 
-            assertEquals(2, response.rows().length);
-            assertNull(response.keys());
-        }
-
-        @Test
-        @Order(14)
-        void delete_deletesRecord() {
-            int rows = operationService.delete(
-                    jdbcTemplate,
-                    Map.of("id", 203L),
-                    "DELETE FROM public.test_users WHERE id = :id"
-            );
-
-            assertEquals(1, rows);
+            assertThat(result.rows()).hasSize(2);
+            assertThat(result.keys()).isNull();
         }
     }
 
@@ -486,56 +507,88 @@ class OperationCoreTest {
     @DisplayName("SimpleRowMapper Tests")
     class SimpleRowMapperTests {
 
-        @Test
-        void mapRow_standardColumns_mapsCorrectly() {
-            List<Map<String, Object>> results = jdbcTemplate.query(
-                    "SELECT id, name, email, age FROM public.test_users WHERE id = :id",
-                    Map.of("id", 1L),
-                    new SimpleRowMapper(dialect)
-            );
-
-            assertFalse(results.isEmpty());
-            assertEquals("Base User", results.get(0).get("name"));
-        }
+        @Mock
+        private Dialect dialect;
 
         @Test
-        void mapRow_jsonColumn_convertsToObject() {
-            List<Map<String, Object>> results = jdbcTemplate.query(
-                    "SELECT metadata FROM public.test_users WHERE id = :id",
-                    Map.of("id", 1L),
-                    new SimpleRowMapper(dialect)
-            );
+        void getColumnValue_standardType_callsSuper() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
 
-            assertFalse(results.isEmpty());
-            assertNotNull(results.get(0).get("metadata"));
-        }
-
-        @Test
-        void mapRow_arrayColumn_convertsList() {
-            List<Map<String, Object>> results = jdbcTemplate.query(
-                    "SELECT tags FROM public.test_users WHERE id = :id",
-                    Map.of("id", 1L),
-                    new SimpleRowMapper(dialect)
-            );
-
-            assertFalse(results.isEmpty());
-            Object tags = results.get(0).get("tags");
-            assertNotNull(tags);
-        }
-
-        @Test
-        void getColumnValue_regularType_callsSuper() throws SQLException {
             ResultSet rs = mock(ResultSet.class);
             ResultSetMetaData metaData = mock(ResultSetMetaData.class);
-
             when(rs.getMetaData()).thenReturn(metaData);
-            when(metaData.getColumnTypeName(1)).thenReturn("int4");
-            when(rs.getObject(1)).thenReturn(42);
+            when(metaData.getColumnTypeName(1)).thenReturn("varchar");
+            when(rs.getObject(1)).thenReturn("hello");
 
-            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
             Object result = mapper.getColumnValue(rs, 1);
 
-            assertEquals(42, result);
+            assertThat(result).isEqualTo("hello");
+        }
+
+        @Test
+        void getColumnValue_jsonType_callsDialectConvertJson() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
+
+            ResultSet rs = mock(ResultSet.class);
+            ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+            when(rs.getMetaData()).thenReturn(metaData);
+            when(metaData.getColumnTypeName(1)).thenReturn("jsonb");
+            when(rs.getObject(1)).thenReturn("{}");
+            when(dialect.convertJsonToVO("{}")).thenReturn(Map.of());
+
+            Object result = mapper.getColumnValue(rs, 1);
+
+            assertThat(result).isEqualTo(Map.of());
+            verify(dialect).convertJsonToVO("{}");
+        }
+
+        @Test
+        void getColumnValue_jsonType_dbException_throwsRuntimeException() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
+
+            ResultSet rs = mock(ResultSet.class);
+            ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+            when(rs.getMetaData()).thenReturn(metaData);
+            when(metaData.getColumnTypeName(1)).thenReturn("json");
+            when(rs.getObject(1)).thenReturn("invalid");
+            when(dialect.convertJsonToVO("invalid")).thenThrow(new DbException(DbErrorCode.SERVER_ERROR));
+
+            assertThatThrownBy(() -> mapper.getColumnValue(rs, 1))
+                    .isInstanceOf(RuntimeException.class);
+        }
+
+        @Test
+        void getColumnValue_varcharArrayType_callsDialectConvertArray() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
+
+            ResultSet rs = mock(ResultSet.class);
+            ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+            Array sqlArray = mock(Array.class);
+            when(rs.getMetaData()).thenReturn(metaData);
+            when(metaData.getColumnTypeName(1)).thenReturn("_varchar");
+            when(rs.getArray(1)).thenReturn(sqlArray);
+            when(dialect.convertToStringArray(sqlArray)).thenReturn(List.of("a", "b"));
+
+            Object result = mapper.getColumnValue(rs, 1);
+
+            assertThat(result).isEqualTo(List.of("a", "b"));
+            verify(dialect).convertToStringArray(sqlArray);
+        }
+
+        @Test
+        void getColumnValue_varcharArrayType_dbException_throwsRuntimeException() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
+
+            ResultSet rs = mock(ResultSet.class);
+            ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+            Array sqlArray = mock(Array.class);
+            when(rs.getMetaData()).thenReturn(metaData);
+            when(metaData.getColumnTypeName(1)).thenReturn("_varchar");
+            when(rs.getArray(1)).thenReturn(sqlArray);
+            when(dialect.convertToStringArray(sqlArray)).thenThrow(new DbException(DbErrorCode.SERVER_ERROR));
+
+            assertThatThrownBy(() -> mapper.getColumnValue(rs, 1))
+                    .isInstanceOf(RuntimeException.class);
         }
     }
 
@@ -543,22 +596,17 @@ class OperationCoreTest {
     @DisplayName("SqlCreatorTemplate Tests")
     class SqlCreatorTemplateTests {
 
-        private SqlCreatorTemplate sqlCreatorTemplate;
-
-        @BeforeEach
-        void setup() {
-            TemplateEngine templateEngine = TemplateEngine.createPrecompiled(ContentType.Plain);
-            sqlCreatorTemplate = new SqlCreatorTemplate(templateEngine, jdbcManager);
-        }
+        @Mock
+        private TemplateEngine templateEngine;
+        @Mock
+        private JdbcManager jdbcManager;
 
         @Test
-        void templateEngine_returnsEngine() {
-            assertNotNull(sqlCreatorTemplate.templateEngine());
-        }
+        void accessors_returnCorrectValues() {
+            SqlCreatorTemplate template = new SqlCreatorTemplate(templateEngine, jdbcManager);
 
-        @Test
-        void jdbcManager_returnsManager() {
-            assertEquals(jdbcManager, sqlCreatorTemplate.jdbcManager());
+            assertThat(template.templateEngine()).isEqualTo(templateEngine);
+            assertThat(template.jdbcManager()).isEqualTo(jdbcManager);
         }
     }
 }

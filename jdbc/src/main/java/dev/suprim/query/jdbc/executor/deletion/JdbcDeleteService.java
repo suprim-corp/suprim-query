@@ -15,11 +15,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.Map;
 
 import static java.util.Objects.isNull;
-import static java.util.Objects.nonNull;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -84,31 +82,25 @@ public class JdbcDeleteService implements DeleteService {
     }
 
     private void addWhere(String filter, DbTable table, DeleteContext context) throws DbException {
-        if (nonNull(filter) && !filter.isBlank()) {
-            Map<String, Object> paramMap = context.getParamMap();
-            if (isNull(paramMap)) {
-                paramMap = new HashMap<>();
-                context.setParamMap(paramMap);
-            }
+        Map<String, Object> paramMap = context.getParamMap();
 
-            DbWhere dbWhere = new DbWhere(
-                    context.getTableName(),
-                    table,
-                    null,
-                    paramMap,
-                    "delete",
-                    null // No joins in delete operations
-            );
+        DbWhere dbWhere = new DbWhere(
+                context.getTableName(),
+                table,
+                null,
+                paramMap,
+                "delete",
+                null // No joins in delete operations
+        );
 
-            Node rootNode = RSQLParserBuilder.newRSQLParser().parse(filter);
+        Node rootNode = RSQLParserBuilder.newRSQLParser().parse(filter);
 
-            String where = rootNode.accept(
-                    new BaseRSQLVisitor(
-                            dbWhere,
-                            jdbcManager.getDialect(context.getDbId())
-                    )
-            );
-            context.setWhere(where);
-        }
+        String where = rootNode.accept(
+                new BaseRSQLVisitor(
+                        dbWhere,
+                        jdbcManager.getDialect(context.getDbId())
+                )
+        );
+        context.setWhere(where);
     }
 }

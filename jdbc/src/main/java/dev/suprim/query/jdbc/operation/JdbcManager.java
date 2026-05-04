@@ -93,10 +93,6 @@ public final class JdbcManager {
 
         Map<Object, DataSource> dataSourceMap = ((RoutingDataSource) dataSource).getResolvedDataSources();
 
-        if (dataSourceMap.isEmpty()) {
-            log.info("**** No datasource to load.");
-        }
-
         for (Object dbId : dataSourceMap.keySet()) {
             DataSource ds = dataSourceMap.get(dbId);
             DatabaseConnectionDetail databaseConnectionDetail = null;

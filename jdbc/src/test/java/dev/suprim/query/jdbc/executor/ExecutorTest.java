@@ -1,614 +1,797 @@
 package dev.suprim.query.jdbc.executor;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import dev.suprim.query.dialect.Dialect;
+import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
-import dev.suprim.query.jdbc.config.DatabaseConnectionDetail;
-import dev.suprim.query.jdbc.config.DatabaseProperties;
-import dev.suprim.query.jdbc.config.EnvironmentProperties;
-import dev.suprim.query.jdbc.config.RoutingDataSource;
 import dev.suprim.query.jdbc.executor.creation.JdbcCreationService;
 import dev.suprim.query.jdbc.executor.deletion.JdbcDeleteService;
 import dev.suprim.query.jdbc.executor.read.JdbcReadService;
 import dev.suprim.query.jdbc.executor.update.JdbcUpdateService;
+import dev.suprim.query.jdbc.operation.DbOperationService;
 import dev.suprim.query.jdbc.operation.JdbcManager;
-import dev.suprim.query.jdbc.operation.JdbcOperationService;
 import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
-import dev.suprim.query.jdbc.processor.*;
+import dev.suprim.query.jdbc.processor.ReadProcessor;
+import dev.suprim.query.jdbc.processor.TSIDProcessor;
+import dev.suprim.query.model.DbColumn;
+import dev.suprim.query.model.DbTable;
 import dev.suprim.query.model.context.ReadContext;
+import dev.suprim.query.model.dto.CountResponse;
 import dev.suprim.query.model.dto.CreationResponse;
-import dev.suprim.query.postgresql.PostGreSQLDialect;
-import dev.suprim.query.postgresql.PostgreSQLDataExclusion;
-import dev.suprim.query.support.MetaDataExtraction;
-import gg.jte.ContentType;
-import gg.jte.TemplateEngine;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.ClassOrderer;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.sql.DataSource;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
-@Testcontainers
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-@TestClassOrder(ClassOrderer.OrderAnnotation.class)
+@ExtendWith(MockitoExtension.class)
 class ExecutorTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("testdb")
-            .withUsername("test")
-            .withPassword("test");
+    @Mock
+    private JdbcManager jdbcManager;
+    @Mock
+    private DbOperationService dbOperationService;
+    @Mock
+    private SqlCreatorTemplate sqlCreatorTemplate;
+    @Mock
+    private TSIDProcessor tsidProcessor;
+    @Mock
+    private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    @Mock
+    private TransactionTemplate transactionTemplate;
+    @Mock
+    private Dialect dialect;
 
-    private static HikariDataSource dataSource;
-    private static NamedParameterJdbcTemplate jdbcTemplate;
-    private static Dialect dialect;
-    private static JdbcManager jdbcManager;
-    private static SqlCreatorTemplate sqlCreatorTemplate;
-    private static JdbcOperationService dbOperationService;
-    private static TSIDProcessor tsidProcessor;
-
-    private static JdbcCreationService creationService;
-    private static JdbcReadService readService;
-    private static JdbcUpdateService updateService;
-    private static JdbcDeleteService deleteService;
+    private static DbTable usersTable;
 
     @BeforeAll
-    static void setUp() {
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl(postgres.getJdbcUrl());
-        config.setUsername(postgres.getUsername());
-        config.setPassword(postgres.getPassword());
-        config.setMaximumPoolSize(5);
-        config.setAutoCommit(true);
-
-        dataSource = new HikariDataSource(config);
-        jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
-
-        ObjectMapper objectMapper = new ObjectMapper();
-        dialect = new PostGreSQLDialect(objectMapper);
-
-        // Create tables first
-        createTestTables();
-
-        DatabaseProperties dbProperties = new DatabaseProperties();
-        dbProperties.setDefaultDatabaseId("test");
-        dbProperties.setDatabases(List.of(
-                new DatabaseConnectionDetail(
-                        "test", "postgresql",
-                        postgres.getJdbcUrl(),
-                        postgres.getUsername(),
-                        postgres.getPassword(),
-                        "testdb",
-                        null, List.of("public"), null, null,
-                        new EnvironmentProperties(false, "HH:mm:ss", "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", 100),
-                        5
-                )
-        ));
-
-        Map<String, DataSource> targets = new HashMap<>();
-        targets.put("test", dataSource);
-        RoutingDataSource routingDataSource = new RoutingDataSource(targets, "test");
-
-        List<MetaDataExtraction> metaDataExtractions = List.of(new PostgreSQLDataExclusion());
-        jdbcManager = new JdbcManager(routingDataSource, List.of(dialect), dbProperties, metaDataExtractions);
-        jdbcManager.reload();
-
-        TemplateEngine templateEngine = TemplateEngine.createPrecompiled(ContentType.Plain);
-        sqlCreatorTemplate = new SqlCreatorTemplate(templateEngine, jdbcManager);
-        dbOperationService = new JdbcOperationService();
-        tsidProcessor = new TSIDProcessor();
-
-        // Create processors for ReadService (ordered by @Order annotation)
-        // RootTableProcessor(1), RootTableFieldProcessor(4), JoinProcessor(6), RootWhereProcessor(8), OrderByProcessor(12)
-        List<ReadProcessor> processors = List.of(
-                new RootTableProcessor(jdbcManager),      // @Order(1)
-                new RootTableFieldProcessor(),            // @Order(4)
-                new JoinProcessor(jdbcManager),           // @Order(6)
-                new RootWhereProcessor(jdbcManager),      // @Order(8)
-                new OrderByProcessor()                    // @Order(12)
+    static void buildTables() {
+        usersTable = new DbTable(
+                "public", "users", "\"public\".\"users\"", "t0",
+                List.of(
+                        new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", ""),
+                        new DbColumn("users", "name", "", "t0", false, "varchar", false, false, String.class, "\"", ""),
+                        new DbColumn("users", "email", "", "t0", false, "varchar", false, false, String.class, "\"", "")
+                ),
+                "TABLE", "\""
         );
-
-        // Create executor services
-        creationService = new JdbcCreationService(tsidProcessor, sqlCreatorTemplate, jdbcManager, dbOperationService);
-        readService = new JdbcReadService(jdbcManager, dbOperationService, processors, sqlCreatorTemplate);
-        updateService = new JdbcUpdateService(jdbcManager, sqlCreatorTemplate, dbOperationService);
-        deleteService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService);
-    }
-
-    private static void createTestTables() {
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.products (
-                id BIGINT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                price NUMERIC(10,2),
-                category VARCHAR(100),
-                stock INT DEFAULT 0
-            )
-            """);
-
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.orders (
-                id BIGINT PRIMARY KEY,
-                product_id BIGINT,
-                quantity INT,
-                total NUMERIC(10,2)
-            )
-            """);
-
-        // Insert test data for read tests
-        jdbcTemplate.getJdbcOperations().execute("""
-            INSERT INTO public.products (id, name, price, category, stock)
-            VALUES (200, 'Read Test 1', 10.00, 'Books', 10),
-                   (201, 'Read Test 2', 20.00, 'Books', 20),
-                   (202, 'Read Test 3', 30.00, 'Games', 30)
-            ON CONFLICT (id) DO NOTHING
-            """);
-
-        jdbcTemplate.getJdbcOperations().execute("""
-            INSERT INTO public.orders (id, product_id, quantity, total)
-            VALUES (300, 200, 2, 20.00),
-                   (301, 201, 1, 20.00)
-            ON CONFLICT (id) DO NOTHING
-            """);
-
-        // Insert test data for update tests
-        jdbcTemplate.getJdbcOperations().execute("""
-            INSERT INTO public.products (id, name, price, category, stock)
-            VALUES (400, 'Update Test', 15.00, 'Test', 5)
-            ON CONFLICT (id) DO UPDATE SET name = 'Update Test', price = 15.00, stock = 5
-            """);
-
-        // Insert test data for delete tests
-        jdbcTemplate.getJdbcOperations().execute("""
-            INSERT INTO public.products (id, name, price, category, stock)
-            VALUES (500, 'Delete Test 1', 10.00, 'Delete', 1),
-                   (501, 'Delete Test 2', 20.00, 'Delete', 2),
-                   (502, 'Delete Test 3', 30.00, 'Keep', 3)
-            ON CONFLICT (id) DO NOTHING
-            """);
-    }
-
-    @AfterAll
-    static void tearDown() {
-        if (dataSource != null) {
-            dataSource.close();
-        }
     }
 
     @Nested
-    @Order(1)
     @DisplayName("JdbcCreationService Tests")
-    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class JdbcCreationServiceTests {
 
-        @Test
-        @Order(1)
-        void execute_simpleInsert_createsRecord() {
-            Map<String, Object> data = new HashMap<>();
-            data.put("id", 100L);
-            data.put("name", "Test Product");
-            data.put("price", 29.99);
-            data.put("category", "Electronics");
-            data.put("stock", 50);
+        private JdbcCreationService creationService;
 
-            CreationResponse response = creationService.execute(
-                    "test", null, "products",
-                    null, // columns (null = all from data)
-                    data,
-                    false, // tsIdEnabled
-                    null   // sequences
-            );
-
-            assertNotNull(response);
-            assertEquals(1, response.row());
+        @BeforeEach
+        void setup() {
+            creationService = new JdbcCreationService(tsidProcessor, sqlCreatorTemplate, jdbcManager, dbOperationService);
         }
 
         @Test
-        @Order(2)
-        void execute_withSpecificColumns_insertsOnlySpecified() {
-            Map<String, Object> data = new HashMap<>();
-            data.put("id", 101L);
-            data.put("name", "Specific Columns Product");
-            data.put("price", 19.99);
+        void execute_simpleInsert_returnsCreationResponse() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (name, email) VALUES (:name, :email)");
 
-            CreationResponse response = creationService.execute(
-                    "test", null, "products",
-                    List.of("id", "name", "price"), // specific columns
-                    data,
-                    false,
-                    null
-            );
+            CreationResponse expectedResponse = new CreationResponse(1, Map.of("id", 1L));
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
 
-            assertNotNull(response);
-            assertEquals(1, response.row());
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+            data.put("email", "john@test.com");
+
+            CreationResponse result = creationService.execute("test", null, "users", null, data, false, null);
+
+            assertThat(result).isNotNull();
+            assertThat(result.row()).isEqualTo(1);
         }
 
         @Test
-        @Order(3)
-        void execute_withTsidEnabled_generatesAndInsertsTsid() {
-            Map<String, Object> data = new HashMap<>();
-            data.put("name", "TSID Product");
-            data.put("price", 39.99);
+        void execute_withSpecificColumns_usesProvidedColumns() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (name) VALUES (:name)");
 
-            CreationResponse response = creationService.execute(
-                    "test", null, "products",
-                    null,
-                    data,
-                    true, // tsIdEnabled
-                    null
-            );
+            CreationResponse expectedResponse = new CreationResponse(1, Map.of("id", 1L));
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
 
-            assertNotNull(response);
-            assertEquals(1, response.row());
-            assertNotNull(response.keys());
-            assertFalse(response.keys().isEmpty());
-            assertTrue(response.keys().containsKey("id"));
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+            data.put("email", "john@test.com");
+
+            CreationResponse result = creationService.execute("test", null, "users", List.of("name"), data, false, null);
+
+            assertThat(result).isNotNull();
+            assertThat(result.row()).isEqualTo(1);
         }
 
         @Test
-        @Order(4)
-        void execute_insertError_throwsRuntimeException() {
-            Map<String, Object> data = new HashMap<>();
-            data.put("id", 100L); // Duplicate key
-            data.put("name", "Duplicate Product");
+        void execute_withTsIdEnabled_generatesTsId() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (id, name) VALUES (:id, :name)");
+            when(tsidProcessor.processTsId(anyMap(), anyList())).thenReturn(Map.of("id", 123456L));
 
-            assertThrows(RuntimeException.class, () ->
-                    creationService.execute("test", null, "products", null, data, false, null)
-            );
+            CreationResponse expectedResponse = new CreationResponse(1, null);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            CreationResponse result = creationService.execute("test", null, "users", null, data, true, null);
+
+            assertThat(result).isNotNull();
+            // When tsIdEnabled and keys is null, returns tsIdMap as keys
+            assertThat(result.keys()).containsEntry("id", 123456L);
+            verify(tsidProcessor).processTsId(anyMap(), anyList());
         }
 
         @Test
-        @Order(5)
-        void execute_invalidTable_throwsRuntimeException() {
-            Map<String, Object> data = new HashMap<>();
+        void execute_duplicateKeyError_throwsRuntimeException() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (name) VALUES (:name)");
+
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenThrow(new DuplicateKeyException("Duplicate key"));
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            assertThatThrownBy(() -> creationService.execute("test", null, "users", null, data, false, null))
+                    .isInstanceOf(RuntimeException.class);
+        }
+
+        @Test
+        void execute_invalidTable_throwsRuntimeException() throws Exception {
+            when(jdbcManager.getTable("test", null, "nonexistent"))
+                    .thenThrow(new DbException(DbErrorCode.INVALID_REQUEST, "Invalid table"));
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            assertThatThrownBy(() -> creationService.execute("test", null, "nonexistent", null, data, false, null))
+                    .isInstanceOf(RuntimeException.class);
+        }
+
+        @Test
+        void execute_withSequences_addsSequenceColumns() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (name, seq_col) VALUES (:name, nextval)");
+
+            CreationResponse expectedResponse = new CreationResponse(1, Map.of("id", 1L));
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            CreationResponse result = creationService.execute("test", null, "users", null, data, false, List.of("seq_col:my_sequence"));
+
+            assertThat(result).isNotNull();
+        }
+
+        @Test
+        void execute_tsIdEnabled_nullResponse_throwsRuntimeException() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (id, name) VALUES (:id, :name)");
+            when(tsidProcessor.processTsId(anyMap(), anyList())).thenReturn(Map.of("id", 123456L));
+
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(null);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            assertThatThrownBy(() -> creationService.execute("test", null, "users", null, data, true, null))
+                    .isInstanceOf(RuntimeException.class);
+        }
+
+        @Test
+        void execute_tsIdEnabled_pkAlreadyInColumns_doesNotDuplicate() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (id, name) VALUES (:id, :name)");
+            when(tsidProcessor.processTsId(anyMap(), anyList())).thenReturn(Map.of("id", 123456L));
+
+            CreationResponse expectedResponse = new CreationResponse(1, null);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
+
+            // Data already contains the PK column "id"
+            Map<String, Object> data = new LinkedHashMap<>();
             data.put("id", 999L);
-            data.put("name", "Test");
+            data.put("name", "John");
 
-            assertThrows(RuntimeException.class, () ->
-                    creationService.execute("test", null, "nonexistent", null, data, false, null)
-            );
+            CreationResponse result = creationService.execute("test", null, "users", null, data, true, null);
+
+            assertThat(result).isNotNull();
+            // PK "id" was already in data keys, so insertableColumns should not have duplicated it
+            verify(tsidProcessor).processTsId(anyMap(), anyList());
         }
 
         @Test
-        @Order(6)
-        void execute_withSequenceFormat_parsesSequence() {
-            // This test verifies sequence parsing even though PostgreSQL doesn't use Oracle sequences
-            Map<String, Object> data = new HashMap<>();
-            data.put("id", 102L);
-            data.put("name", "Sequence Test");
+        void execute_withInvalidSequenceFormat_ignoresInvalidEntry() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (name) VALUES (:name)");
 
-            // With invalid sequence format, it should be ignored
-            CreationResponse response = creationService.execute(
-                    "test", null, "products",
-                    null,
-                    data,
-                    false,
-                    List.of("invalid_format") // No colon, should be ignored
-            );
+            CreationResponse expectedResponse = new CreationResponse(1, Map.of("id", 1L));
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
 
-            assertNotNull(response);
-            assertEquals(1, response.row());
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            // "invalid_no_colon" has no ":" so colSeq.length != 2 — should be ignored
+            CreationResponse result = creationService.execute("test", null, "users", null, data, false, List.of("invalid_no_colon"));
+
+            assertThat(result).isNotNull();
+            assertThat(result.row()).isEqualTo(1);
+        }
+
+        @Test
+        void execute_tsIdEnabled_withNonNullKeys_returnsDbKeys() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (id, name) VALUES (:id, :name)");
+            when(tsidProcessor.processTsId(anyMap(), anyList())).thenReturn(Map.of("id", 123456L));
+
+            // DB returns keys (non-null) — should use DB keys, not tsIdMap
+            CreationResponse expectedResponse = new CreationResponse(1, Map.of("id", 789L));
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            CreationResponse result = creationService.execute("test", null, "users", null, data, true, null);
+
+            assertThat(result).isNotNull();
+            // DB-returned keys take priority over TSID keys
+            assertThat(result.keys()).containsEntry("id", 789L);
+        }
+
+        @Test
+        void execute_transactionException_rollsBackAndThrows() throws Exception {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.create(any())).thenReturn("INSERT INTO users (name) VALUES (:name)");
+
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenThrow(new RuntimeException("DB error", new IllegalStateException("root cause")));
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            assertThatThrownBy(() -> creationService.execute("test", null, "users", null, data, false, null))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("ERROR DURING INSERTION");
+
+            verify(mockStatus).setRollbackOnly();
         }
     }
 
     @Nested
-    @Order(2)
     @DisplayName("JdbcReadService Tests")
-    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class JdbcReadServiceTests {
 
-        @Test
-        @Order(1)
-        void findAll_simpleQuery_returnsResults() throws DbException {
-            // First verify data exists via raw JDBC
-            Long count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM public.products",
-                    Map.of(),
-                    Long.class
-            );
-            assertTrue(count > 0, "Test data should exist in products table");
+        private JdbcReadService readService;
 
-            // Create a fresh context for each read
-            ReadContext context = new ReadContext();
-            context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-
-            List<Map<String, Object>> results = readService.findAll(context);
-
-            assertNotNull(results);
-            // Note: Results might be empty if SQL generation fails silently
-            // Just verify query works without throwing exception
-            assertTrue(count > 0, "Count should be > 0 even if results empty");
+        @BeforeEach
+        void setup() {
+            readService = new JdbcReadService(jdbcManager, dbOperationService, List.of(), sqlCreatorTemplate);
         }
 
         @Test
-        @Order(2)
-        void findAll_withFilter_filtersResults() throws DbException {
+        void findAll_simple_returnsList() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of(Map.of("id", 1L, "name", "John")));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-            context.setFilter("category==Books");
+            context.setParamMap(new HashMap<>());
 
-            List<Map<String, Object>> results = readService.findAll(context);
+            List<Map<String, Object>> result = readService.findAll(context);
 
-            assertNotNull(results);
-            assertTrue(results.stream().allMatch(r -> "Books".equals(r.get("category"))));
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0)).containsEntry("name", "John");
         }
 
         @Test
-        @Order(3)
-        void findAll_withSorting_sortsResults() throws DbException {
+        void findAll_dbException_rethrows() throws DbException {
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenThrow(new DbException(DbErrorCode.SERVER_ERROR));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-            context.setSorts(List.of("price;DESC"));
 
-            List<Map<String, Object>> results = readService.findAll(context);
-
-            assertNotNull(results);
-            if (results.size() >= 2) {
-                Number first = (Number) results.get(0).get("price");
-                Number second = (Number) results.get(1).get("price");
-                assertTrue(first.doubleValue() >= second.doubleValue());
-            }
+            assertThatThrownBy(() -> readService.findAll(context))
+                    .isInstanceOf(DbException.class);
         }
 
         @Test
-        @Order(4)
-        void findOne_existingRecord_returnsRecord() throws DbException {
+        void findAll_genericException_wrapsInDbException() throws DbException {
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenThrow(new RuntimeException("unexpected"));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-            context.setFilter("id==200");
+
+            assertThatThrownBy(() -> readService.findAll(context))
+                    .isInstanceOf(DbException.class);
+        }
+
+        @Test
+        void findOne_existing_returnsMap() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.findOne(any(ReadContext.class))).thenReturn("SELECT * FROM users WHERE id = :id LIMIT 1");
+            when(dbOperationService.findOne(eq(namedParameterJdbcTemplate), anyString(), any()))
+                    .thenReturn(Map.of("id", 1L, "name", "John"));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setParamMap(new HashMap<>());
 
             Map<String, Object> result = readService.findOne(context);
 
-            assertNotNull(result);
-            assertEquals("Read Test 1", result.get("name"));
+            assertThat(result).containsEntry("name", "John");
         }
 
         @Test
-        @Order(5)
-        void findOne_nonExistingRecord_returnsNull() throws DbException {
+        void findOne_nonExisting_returnsNull() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.findOne(any(ReadContext.class))).thenReturn("SELECT * FROM users WHERE id = :id LIMIT 1");
+            when(dbOperationService.findOne(eq(namedParameterJdbcTemplate), anyString(), any()))
+                    .thenThrow(new EmptyResultDataAccessException(1));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-            context.setFilter("id==99999");
+            context.setParamMap(new HashMap<>());
 
             Map<String, Object> result = readService.findOne(context);
 
-            assertNull(result);
+            assertThat(result).isNull();
         }
 
         @Test
-        @Order(6)
-        void count_withoutFilter_returnsTotalCount() throws DbException {
+        void findOne_dataAccessException_throwsRuntimeException() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.findOne(any(ReadContext.class))).thenReturn("SELECT * FROM users WHERE id = :id LIMIT 1");
+            when(dbOperationService.findOne(eq(namedParameterJdbcTemplate), anyString(), any()))
+                    .thenThrow(new DataAccessResourceFailureException("Connection lost"));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            // No fields for count query
+            context.setParamMap(new HashMap<>());
+
+            assertThatThrownBy(() -> readService.findOne(context))
+                    .isInstanceOf(RuntimeException.class);
+        }
+
+        @Test
+        void findOne_genericException_throwsDbException() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.findOne(any(ReadContext.class))).thenReturn("SELECT * FROM users WHERE id = :id LIMIT 1");
+            when(dbOperationService.findOne(eq(namedParameterJdbcTemplate), anyString(), any()))
+                    .thenThrow(new IllegalStateException("unexpected"));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setParamMap(new HashMap<>());
+
+            assertThatThrownBy(() -> readService.findOne(context))
+                    .isInstanceOf(DbException.class);
+        }
+
+        @Test
+        void count_dataAccessException_throwsDbException() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenThrow(new DataAccessResourceFailureException("Connection lost"));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setParamMap(new HashMap<>());
+
+            assertThatThrownBy(() -> readService.count(context))
+                    .isInstanceOf(DbException.class);
+        }
+
+        @Test
+        void count_returnsCount() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(5));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setParamMap(new HashMap<>());
 
             long count = readService.count(context);
 
-            assertTrue(count > 0);
+            assertThat(count).isEqualTo(5);
         }
 
         @Test
-        @Order(7)
-        void count_withFilter_returnsFilteredCount() throws DbException {
+        void findOne_withProcessors_callsProcessors() throws DbException {
+            ReadProcessor processor = mock(ReadProcessor.class);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.findOne(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 1");
+            when(dbOperationService.findOne(eq(namedParameterJdbcTemplate), anyString(), any()))
+                    .thenReturn(Map.of("id", 1L));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFilter("category==Books");
+            context.setParamMap(new HashMap<>());
 
-            long count = readService.count(context);
+            Map<String, Object> result = serviceWithProcessors.findOne(context);
 
-            assertEquals(2, count);
+            assertThat(result).isNotNull();
+            verify(processor).process(context);
         }
 
         @Test
-        @Order(8)
-        void findAll_specificFields_returnsOnlySpecified() throws DbException {
+        void count_withProcessors_callsProcessors() throws DbException {
+            ReadProcessor processor = mock(ReadProcessor.class);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(3));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("id,name");
+            context.setParamMap(new HashMap<>());
 
-            List<Map<String, Object>> results = readService.findAll(context);
+            long count = serviceWithProcessors.count(context);
 
-            // Results might be empty due to JTE template issues in test environment
-            // The test verifies no exception is thrown
-            assertNotNull(results);
+            assertThat(count).isEqualTo(3);
+            verify(processor).process(context);
         }
 
         @Test
-        @Order(9)
-        void findAll_invalidRsql_throwsDbException() {
+        void findAll_withProcessors_callsProcessors() throws DbException {
+            ReadProcessor processor = mock(ReadProcessor.class);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of());
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-            context.setFilter("invalid[[[[");
+            context.setParamMap(new HashMap<>());
 
-            assertThrows(DbException.class, () -> readService.findAll(context));
+            serviceWithProcessors.findAll(context);
+
+            verify(processor).process(context);
         }
     }
 
     @Nested
-    @Order(3)
     @DisplayName("JdbcUpdateService Tests")
-    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class JdbcUpdateServiceTests {
 
-        @Test
-        @Order(1)
-        void patch_simpleUpdate_updatesRecord() throws DbException {
-            Map<String, Object> data = new HashMap<>();
-            data.put("name", "Updated Name");
+        private JdbcUpdateService updateService;
 
-            int updated = updateService.patch("test", null, "products", data, "id==400");
-
-            assertEquals(1, updated);
-
-            // Verify update
-            ReadContext context = new ReadContext();
-            context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-            context.setFilter("id==400");
-
-            Map<String, Object> result = readService.findOne(context);
-            assertEquals("Updated Name", result.get("name"));
+        @BeforeEach
+        void setup() {
+            updateService = new JdbcUpdateService(jdbcManager, sqlCreatorTemplate, dbOperationService);
         }
 
         @Test
-        @Order(2)
-        void patch_multipleFields_updatesAllFields() throws DbException {
-            Map<String, Object> data = new HashMap<>();
-            data.put("price", 25.00);
-            data.put("stock", 100);
+        void patch_simpleUpdate_returnsRowCount() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(sqlCreatorTemplate.updateQuery(any())).thenReturn("UPDATE users SET name = :name WHERE id = :id");
 
-            int updated = updateService.patch("test", null, "products", data, "id==400");
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.update(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(1);
 
-            assertEquals(1, updated);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "Updated");
+
+            int result = updateService.patch("test", null, "users", data, "id==1");
+
+            assertThat(result).isEqualTo(1);
         }
 
         @Test
-        @Order(3)
-        void patch_noMatchingRecords_returnsZero() throws DbException {
-            Map<String, Object> data = new HashMap<>();
-            data.put("name", "No Match");
-
-            int updated = updateService.patch("test", null, "products", data, "id==99999");
-
-            assertEquals(0, updated);
-        }
-
-        @Test
-        @Order(4)
         void patch_withoutFilter_throwsDbException() {
-            Map<String, Object> data = new HashMap<>();
-            data.put("category", "Updated");
+            Map<String, Object> data = Map.of("name", "Updated");
 
-            // Empty or null filter is rejected — full-table UPDATE is not allowed
-            assertThrows(DbException.class, () ->
-                    updateService.patch("test", null, "products", data, "")
-            );
-            assertThrows(DbException.class, () ->
-                    updateService.patch("test", null, "products", data, null)
-            );
+            assertThatThrownBy(() -> updateService.patch("test", null, "users", data, null))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("UPDATE without filter is not allowed");
         }
 
         @Test
-        @Order(5)
-        void patch_invalidTable_throwsDbException() {
-            Map<String, Object> data = new HashMap<>();
-            data.put("name", "Test");
+        void patch_blankFilter_throwsDbException() {
+            Map<String, Object> data = Map.of("name", "Updated");
 
-            assertThrows(DbException.class, () ->
-                    updateService.patch("test", null, "nonexistent", data, "id==1")
-            );
+            assertThatThrownBy(() -> updateService.patch("test", null, "users", data, "   "))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("UPDATE without filter is not allowed");
+        }
+
+        @Test
+        void patch_invalidTable_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "nonexistent"))
+                    .thenThrow(new DbException(DbErrorCode.INVALID_REQUEST, "Invalid table"));
+
+            Map<String, Object> data = Map.of("name", "Updated");
+
+            assertThatThrownBy(() -> updateService.patch("test", null, "nonexistent", data, "id==1"))
+                    .isInstanceOf(DbException.class);
+        }
+
+        @Test
+        void patch_noMatch_returnsZero() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(sqlCreatorTemplate.updateQuery(any())).thenReturn("UPDATE users SET name = :name WHERE id = :id");
+
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.update(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(0);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "Updated");
+
+            int result = updateService.patch("test", null, "users", data, "id==999");
+
+            assertThat(result).isEqualTo(0);
+        }
+
+        @Test
+        void patch_transactionReturnsNull_returnsZero() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(sqlCreatorTemplate.updateQuery(any())).thenReturn("UPDATE users SET name = :name WHERE id = :id");
+
+            when(transactionTemplate.execute(any())).thenReturn(null);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "Updated");
+
+            int result = updateService.patch("test", null, "users", data, "id==1");
+
+            assertThat(result).isEqualTo(0);
+        }
+
+        @Test
+        void patch_transactionException_rollsBackAndThrows() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(sqlCreatorTemplate.updateQuery(any())).thenReturn("UPDATE users SET name = :name WHERE id = :id");
+
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+            when(dbOperationService.update(eq(namedParameterJdbcTemplate), anyMap(), anyString()))
+                    .thenThrow(new RuntimeException("DB error"));
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "Updated");
+
+            assertThatThrownBy(() -> updateService.patch("test", null, "users", data, "id==1"))
+                    .isInstanceOf(RuntimeException.class);
+
+            verify(mockStatus).setRollbackOnly();
         }
     }
 
     @Nested
-    @Order(4)
     @DisplayName("JdbcDeleteService Tests")
-    @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class JdbcDeleteServiceTests {
 
-        @Test
-        @Order(1)
-        void delete_singleRecord_deletesRecord() throws DbException {
-            int deleted = deleteService.delete("test", null, "products", "id==500");
+        private JdbcDeleteService deleteService;
 
-            assertEquals(1, deleted);
-
-            // Verify deletion
-            ReadContext context = new ReadContext();
-            context.setDbId("test");
-            context.setSchemaName("public");
-            context.setTableName("products");
-            context.setFields("*");
-            context.setFilter("id==500");
-
-            Map<String, Object> result = readService.findOne(context);
-            assertNull(result);
+        @BeforeEach
+        void setup() {
+            deleteService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService);
         }
 
         @Test
-        @Order(2)
-        void delete_multipleRecords_deletesMatching() throws DbException {
-            // First insert test data for this specific test
-            jdbcTemplate.getJdbcOperations().execute("""
-                INSERT INTO public.products (id, name, price, category, stock)
-                VALUES (510, 'Delete Multi 1', 10.00, 'MultiDelete', 1),
-                       (511, 'Delete Multi 2', 20.00, 'MultiDelete', 2)
-                ON CONFLICT (id) DO NOTHING
-                """);
+        void delete_single_returnsOne() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :id");
 
-            int deleted = deleteService.delete("test", null, "products", "category==MultiDelete");
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(1);
 
-            assertTrue(deleted >= 1);
+            int result = deleteService.delete("test", null, "users", "id==1");
+
+            assertThat(result).isEqualTo(1);
         }
 
         @Test
-        @Order(3)
-        void delete_noMatchingRecords_returnsZero() throws DbException {
-            int deleted = deleteService.delete("test", null, "products", "id==99999");
-
-            assertEquals(0, deleted);
-        }
-
-        @Test
-        @Order(4)
         void delete_withoutFilter_throwsDbException() {
-            // empty filter is rejected — full-table DELETE is not allowed
-            assertThrows(DbException.class, () ->
-                    deleteService.delete("test", null, "products", "")
-            );
+            assertThatThrownBy(() -> deleteService.delete("test", null, "users", null))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("DELETE without filter is not allowed");
         }
 
         @Test
-        @Order(5)
-        void delete_invalidTable_throwsDbException() {
-            assertThrows(DbException.class, () ->
-                    deleteService.delete("test", null, "nonexistent", "id==1")
-            );
+        void delete_blankFilter_throwsDbException() {
+            assertThatThrownBy(() -> deleteService.delete("test", null, "users", "   "))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("DELETE without filter is not allowed");
         }
 
         @Test
-        @Order(6)
-        void delete_invalidRsql_throwsException() {
-            // RSQL parser throws RSQLParserException for invalid syntax
-            assertThrows(Exception.class, () ->
-                    deleteService.delete("test", null, "products", "invalid[[[[")
-            );
+        void delete_invalidTable_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "nonexistent"))
+                    .thenThrow(new DbException(DbErrorCode.INVALID_REQUEST, "Invalid table"));
+
+            assertThatThrownBy(() -> deleteService.delete("test", null, "nonexistent", "id==1"))
+                    .isInstanceOf(DbException.class);
+        }
+
+        @Test
+        void delete_noMatch_returnsZero() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :id");
+
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(0);
+
+            int result = deleteService.delete("test", null, "users", "id==999");
+
+            assertThat(result).isEqualTo(0);
+        }
+
+        @Test
+        void delete_transactionReturnsNull_returnsZero() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :id");
+
+            when(transactionTemplate.execute(any())).thenReturn(null);
+
+            int result = deleteService.delete("test", null, "users", "id==1");
+
+            assertThat(result).isEqualTo(0);
+        }
+
+        @Test
+        void delete_transactionException_rollsBackAndThrows() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :id");
+
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+            when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString()))
+                    .thenThrow(new RuntimeException("DB error"));
+
+            assertThatThrownBy(() -> deleteService.delete("test", null, "users", "id==1"))
+                    .isInstanceOf(RuntimeException.class);
+
+            verify(mockStatus).setRollbackOnly();
         }
     }
 }

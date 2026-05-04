@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 
 import static java.util.Objects.isNull;
-import static java.util.Objects.nonNull;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -92,25 +91,23 @@ public class JdbcUpdateService implements UpdateService {
             DbTable table,
             UpdateContext context
     ) throws DbException {
-        if (nonNull(filter) && !filter.isBlank()) {
-            DbWhere dbWhere = new DbWhere(
-                    context.getTableName(),
-                    table,
-                    null,
-                    context.getParamMap(),
-                    "update",
-                    null // No joins in update operations
-            );
+        DbWhere dbWhere = new DbWhere(
+                context.getTableName(),
+                table,
+                null,
+                context.getParamMap(),
+                "update",
+                null // No joins in update operations
+        );
 
-            Node rootNode = RSQLParserBuilder.newRSQLParser().parse(filter);
+        Node rootNode = RSQLParserBuilder.newRSQLParser().parse(filter);
 
-            String where = rootNode.accept(
-                    new BaseRSQLVisitor(
-                            dbWhere,
-                            jdbcManager.getDialect(context.getDbId())
-                    )
-            );
-            context.setWhere(where);
-        }
+        String where = rootNode.accept(
+                new BaseRSQLVisitor(
+                        dbWhere,
+                        jdbcManager.getDialect(context.getDbId())
+                )
+        );
+        context.setWhere(where);
     }
 }

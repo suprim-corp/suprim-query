@@ -1,6 +1,8 @@
 package dev.suprim.query.jdbc.config;
 
-public abstract class DatabaseContextHolder {
+public final class DatabaseContextHolder {
+    private DatabaseContextHolder() {}
+
     private static final ThreadLocal<String> currentDb = new ThreadLocal<>();
 
     public static String getCurrentDbId() {

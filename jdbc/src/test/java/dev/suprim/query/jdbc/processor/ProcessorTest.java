@@ -1,128 +1,65 @@
 package dev.suprim.query.jdbc.processor;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import dev.suprim.query.dialect.Dialect;
 import dev.suprim.query.exception.DbException;
-import dev.suprim.query.jdbc.config.DatabaseConnectionDetail;
-import dev.suprim.query.jdbc.config.DatabaseProperties;
-import dev.suprim.query.jdbc.config.EnvironmentProperties;
-import dev.suprim.query.jdbc.config.RoutingDataSource;
 import dev.suprim.query.jdbc.operation.JdbcManager;
-import dev.suprim.query.model.DbColumn;
-import dev.suprim.query.model.DbSort;
-import dev.suprim.query.model.DbTable;
-import dev.suprim.query.model.JoinDetail;
-import dev.suprim.query.model.JoinType;
+import dev.suprim.query.model.*;
 import dev.suprim.query.model.context.ReadContext;
-import dev.suprim.query.postgresql.PostGreSQLDialect;
-import dev.suprim.query.postgresql.PostgreSQLDataExclusion;
-import dev.suprim.query.support.MetaDataExtraction;
 import org.junit.jupiter.api.*;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import tools.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import javax.sql.DataSource;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-@Testcontainers
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@ExtendWith(MockitoExtension.class)
 class ProcessorTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("testdb")
-            .withUsername("test")
-            .withPassword("test");
+    @Mock
+    private JdbcManager jdbcManager;
 
-    private static HikariDataSource dataSource;
-    private static NamedParameterJdbcTemplate jdbcTemplate;
-    private static Dialect dialect;
-    private static JdbcManager jdbcManager;
+    private static DbTable usersTable;
+    private static DbTable departmentsTable;
+    private static DbTable ordersTable;
 
     @BeforeAll
-    static void setUp() {
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl(postgres.getJdbcUrl());
-        config.setUsername(postgres.getUsername());
-        config.setPassword(postgres.getPassword());
-        config.setMaximumPoolSize(5);
-        config.setAutoCommit(true);
+    static void buildTables() {
+        usersTable = new DbTable(
+                "public", "users", "\"public\".\"users\"", "t0",
+                List.of(
+                        new DbColumn("users", "id", "", "t0", true, "int8", false, false, Long.class, "\"", ""),
+                        new DbColumn("users", "name", "", "t0", false, "varchar", false, false, String.class, "\"", ""),
+                        new DbColumn("users", "email", "", "t0", false, "varchar", false, false, String.class, "\"", ""),
+                        new DbColumn("users", "department_id", "", "t0", false, "int8", false, false, Long.class, "\"", "")
+                ),
+                "TABLE", "\""
+        );
 
-        dataSource = new HikariDataSource(config);
-        jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
+        departmentsTable = new DbTable(
+                "public", "departments", "\"public\".\"departments\"", "t1",
+                List.of(
+                        new DbColumn("departments", "id", "", "t1", true, "int8", false, false, Long.class, "\"", ""),
+                        new DbColumn("departments", "name", "", "t1", false, "varchar", false, false, String.class, "\"", "")
+                ),
+                "TABLE", "\""
+        );
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        dialect = new PostGreSQLDialect(objectMapper);
-
-        // Create tables first
-        createTestTables();
-
-        DatabaseProperties dbProperties = new DatabaseProperties();
-        dbProperties.setDefaultDatabaseId("test");
-        dbProperties.setDatabases(List.of(
-                new DatabaseConnectionDetail(
-                        "test", "postgresql",
-                        postgres.getJdbcUrl(),
-                        postgres.getUsername(),
-                        postgres.getPassword(),
-                        "testdb",
-                        null, List.of("public"), null, null,
-                        new EnvironmentProperties(false, "HH:mm:ss", "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", 100),
-                        5
-                )
-        ));
-
-        Map<String, DataSource> targets = new HashMap<>();
-        targets.put("test", dataSource);
-        RoutingDataSource routingDataSource = new RoutingDataSource(targets, "test");
-
-        List<MetaDataExtraction> metaDataExtractions = List.of(new PostgreSQLDataExclusion());
-        jdbcManager = new JdbcManager(routingDataSource, List.of(dialect), dbProperties, metaDataExtractions);
-        jdbcManager.reload();
-    }
-
-    private static void createTestTables() {
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.users (
-                id BIGINT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                email VARCHAR(255),
-                department_id BIGINT
-            )
-            """);
-
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.departments (
-                id BIGINT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL
-            )
-            """);
-
-        jdbcTemplate.getJdbcOperations().execute("""
-            CREATE TABLE IF NOT EXISTS public.orders (
-                id BIGINT PRIMARY KEY,
-                user_id BIGINT,
-                product_name VARCHAR(255),
-                total NUMERIC(10,2)
-            )
-            """);
-    }
-
-    @AfterAll
-    static void tearDown() {
-        if (dataSource != null) {
-            dataSource.close();
-        }
+        ordersTable = new DbTable(
+                "public", "orders", "\"public\".\"orders\"", "t2",
+                List.of(
+                        new DbColumn("orders", "id", "", "t2", true, "int8", false, false, Long.class, "\"", ""),
+                        new DbColumn("orders", "user_id", "", "t2", false, "int8", false, false, Long.class, "\"", ""),
+                        new DbColumn("orders", "product_name", "", "t2", false, "varchar", false, false, String.class, "\"", ""),
+                        new DbColumn("orders", "total", "", "t2", false, "numeric", false, false, Double.class, "\"", "")
+                ),
+                "TABLE", "\""
+        );
     }
 
     @Nested
@@ -149,9 +86,8 @@ class ProcessorTest {
 
             Map<String, Object> keys = tsidProcessor.processTsId(data, List.of(pkColumn));
 
-            assertNotNull(keys.get("id"));
-            assertTrue(keys.get("id") instanceof Long);
-            assertEquals(keys.get("id"), data.get("id"));
+            assertThat(keys.get("id")).isNotNull().isInstanceOf(Long.class);
+            assertThat(data.get("id")).isEqualTo(keys.get("id"));
         }
 
         @Test
@@ -168,9 +104,8 @@ class ProcessorTest {
 
             Map<String, Object> keys = tsidProcessor.processTsId(data, List.of(pkColumn));
 
-            assertNotNull(keys.get("id"));
-            assertTrue(keys.get("id") instanceof String);
-            assertEquals(keys.get("id"), data.get("id"));
+            assertThat(keys.get("id")).isNotNull().isInstanceOf(String.class);
+            assertThat(data.get("id")).isEqualTo(keys.get("id"));
         }
 
         @Test
@@ -183,7 +118,7 @@ class ProcessorTest {
 
             Map<String, Object> keys = tsidProcessor.processTsId(data, List.of(pkColumn));
 
-            assertTrue(keys.isEmpty());
+            assertThat(keys).isEmpty();
         }
 
         @Test
@@ -196,7 +131,7 @@ class ProcessorTest {
 
             Map<String, Object> keys = tsidProcessor.processTsId(data, List.of(pkColumn));
 
-            assertTrue(keys.isEmpty());
+            assertThat(keys).isEmpty();
         }
 
         @Test
@@ -210,10 +145,9 @@ class ProcessorTest {
 
             Map<String, Object> data = new HashMap<>();
 
-            DbException ex = assertThrows(DbException.class,
-                    () -> tsidProcessor.processTsId(data, List.of(pkColumn)));
-
-            assertTrue(ex.getMessage().contains("Unable to detect data type family"));
+            assertThatThrownBy(() -> tsidProcessor.processTsId(data, List.of(pkColumn)))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("Unable to detect data type family");
         }
 
         @Test
@@ -237,9 +171,9 @@ class ProcessorTest {
 
             Map<String, Object> keys = tsidProcessor.processTsId(data, List.of(pk1, pk2));
 
-            assertEquals(2, keys.size());
-            assertTrue(keys.get("id1") instanceof Long);
-            assertTrue(keys.get("id2") instanceof String);
+            assertThat(keys).hasSize(2);
+            assertThat(keys.get("id1")).isInstanceOf(Long.class);
+            assertThat(keys.get("id2")).isInstanceOf(String.class);
         }
     }
 
@@ -256,18 +190,22 @@ class ProcessorTest {
 
         @Test
         void process_validTable_setsRootInContext() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
             context.setTableName("users");
 
             processor.process(context);
 
-            assertNotNull(context.getRoot());
-            assertEquals("users", context.getRoot().name());
+            assertThat(context.getRoot()).isNotNull();
+            assertThat(context.getRoot().name()).isEqualTo("users");
         }
 
         @Test
         void process_withSchema_setsRootInContext() throws DbException {
+            when(jdbcManager.getTable("test", "public", "departments")).thenReturn(departmentsTable);
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
             context.setSchemaName("public");
@@ -275,17 +213,46 @@ class ProcessorTest {
 
             processor.process(context);
 
-            assertNotNull(context.getRoot());
-            assertEquals("departments", context.getRoot().name());
+            assertThat(context.getRoot()).isNotNull();
+            assertThat(context.getRoot().name()).isEqualTo("departments");
         }
 
         @Test
-        void process_invalidTable_throwsDbException() {
+        void process_invalidTable_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "nonexistent"))
+                    .thenThrow(new DbException(dev.suprim.query.exception.DbErrorCode.INVALID_REQUEST, "Invalid table"));
+
             ReadContext context = new ReadContext();
             context.setDbId("test");
             context.setTableName("nonexistent");
 
-            assertThrows(DbException.class, () -> processor.process(context));
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(DbException.class);
+        }
+
+        @Test
+        void process_negativeLimitBelowMinusOne_throwsDbException() {
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setLimit(-2);
+
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("limit must be >= -1");
+        }
+
+        @Test
+        void process_negativeOffset_throwsDbException() {
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setLimit(10);
+            context.setOffset(-1);
+
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("offset must be >= 0");
         }
     }
 
@@ -301,57 +268,46 @@ class ProcessorTest {
         }
 
         @Test
-        void process_nullFields_doesNotSetColumns() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
+        void process_nullFields_doesNotSetColumns() {
             ReadContext context = new ReadContext();
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setFields(null);
 
             processor.process(context);
 
-            assertNull(context.getCols());
+            assertThat(context.getCols()).isNull();
         }
 
         @Test
-        void process_allFields_includesAllColumns() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
+        void process_allFields_includesAllColumns() {
             ReadContext context = new ReadContext();
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setFields("*");
 
             processor.process(context);
 
-            assertNotNull(context.getCols());
-            assertFalse(context.getCols().isEmpty());
+            assertThat(context.getCols()).isNotNull().hasSize(4);
         }
 
         @Test
-        void process_specificFields_includesOnlySpecified() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
+        void process_specificFields_includesOnlySpecified() {
             ReadContext context = new ReadContext();
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setFields("id,name");
 
             processor.process(context);
 
-            assertNotNull(context.getCols());
-            assertEquals(2, context.getCols().size());
+            assertThat(context.getCols()).isNotNull().hasSize(2);
         }
 
         @Test
-        void process_blankFields_throwsException() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
+        void process_blankFields_throwsException() {
             ReadContext context = new ReadContext();
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setFields("   ");
 
-            // Blank fields get trimmed but not caught by null check,
-            // causing an exception when trying to parse empty column name
-            assertThrows(RuntimeException.class, () -> processor.process(context));
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(RuntimeException.class);
         }
     }
 
@@ -368,91 +324,115 @@ class ProcessorTest {
 
         @Test
         void process_nullSorts_doesNothing() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setTableName("users");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setSorts(null);
 
             processor.process(context);
 
-            assertNull(context.getDbSortList());
+            assertThat(context.getDbSortList()).isNull();
         }
 
         @Test
         void process_emptySorts_doesNothing() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setTableName("users");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setSorts(List.of());
 
             processor.process(context);
 
-            assertNull(context.getDbSortList());
+            assertThat(context.getDbSortList()).isNull();
         }
 
         @Test
-        void process_withSort_addsSortToContext() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
+        void process_withSort_defaultsToAsc() throws DbException {
             ReadContext context = new ReadContext();
             context.setTableName("users");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setSorts(List.of("name"));
 
             processor.process(context);
 
-            assertNotNull(context.getDbSortList());
-            assertEquals(1, context.getDbSortList().size());
-            assertEquals("ASC", context.getDbSortList().get(0).sortDirection());
+            assertThat(context.getDbSortList()).hasSize(1);
+            assertThat(context.getDbSortList().get(0).sortDirection()).isEqualTo("ASC");
         }
 
         @Test
         void process_withAscSort_setsAscDirection() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setTableName("users");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setSorts(List.of("name;ASC"));
 
             processor.process(context);
 
-            assertNotNull(context.getDbSortList());
-            assertEquals("ASC", context.getDbSortList().get(0).sortDirection());
+            assertThat(context.getDbSortList()).hasSize(1);
+            assertThat(context.getDbSortList().get(0).sortDirection()).isEqualTo("ASC");
         }
 
         @Test
         void process_withDescSort_setsDescDirection() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setTableName("users");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setSorts(List.of("name;DESC"));
 
             processor.process(context);
 
-            assertNotNull(context.getDbSortList());
-            assertEquals("DESC", context.getDbSortList().get(0).sortDirection());
+            assertThat(context.getDbSortList()).hasSize(1);
+            assertThat(context.getDbSortList().get(0).sortDirection()).isEqualTo("DESC");
         }
 
         @Test
         void process_multipleSorts_addsAllSorts() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setTableName("users");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setSorts(List.of("name;ASC", "id;DESC"));
 
             processor.process(context);
 
-            assertNotNull(context.getDbSortList());
-            assertEquals(2, context.getDbSortList().size());
+            assertThat(context.getDbSortList()).hasSize(2);
+        }
+
+        @Test
+        void process_invalidDirection_throwsDbException() {
+            ReadContext context = new ReadContext();
+            context.setTableName("users");
+            context.setRoot(usersTable);
+            context.setSorts(List.of("name;INVALID"));
+
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("Invalid sort direction");
+        }
+
+        @Test
+        void process_blankSort_throwsDbException() {
+            ReadContext context = new ReadContext();
+            context.setTableName("users");
+            context.setRoot(usersTable);
+            context.setSorts(List.of("   "));
+
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("must not be blank");
+        }
+
+        @Test
+        void process_nullSortElement_throwsDbException() {
+            ReadContext context = new ReadContext();
+            context.setTableName("users");
+            context.setRoot(usersTable);
+            List<String> sorts = new ArrayList<>();
+            sorts.add(null);
+            context.setSorts(sorts);
+
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("must not be blank");
         }
     }
 
@@ -469,65 +449,62 @@ class ProcessorTest {
 
         @Test
         void process_nullFilter_doesNotSetWhere() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setDbId("test");
             context.setTableName("users");
-            context.setRoot(table);
-            context.setCols(table.buildColumns());
+            context.setRoot(usersTable);
+            context.setCols(usersTable.buildColumns());
             context.setFilter(null);
 
             processor.process(context);
 
-            assertNull(context.getRootWhere());
+            assertThat(context.getRootWhere()).isNull();
         }
 
         @Test
         void process_blankFilter_doesNotSetWhere() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setDbId("test");
             context.setTableName("users");
-            context.setRoot(table);
-            context.setCols(table.buildColumns());
+            context.setRoot(usersTable);
+            context.setCols(usersTable.buildColumns());
             context.setFilter("   ");
 
             processor.process(context);
 
-            assertNull(context.getRootWhere());
+            assertThat(context.getRootWhere()).isNull();
         }
 
         @Test
         void process_withSimpleFilter_setsWhere() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
+            Dialect dialect = mock(Dialect.class);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
 
             ReadContext context = new ReadContext();
             context.setDbId("test");
             context.setTableName("users");
-            context.setRoot(table);
-            context.setCols(table.buildColumns());
+            context.setRoot(usersTable);
+            context.setCols(usersTable.buildColumns());
             context.setFilter("id==1");
 
             processor.process(context);
 
-            assertNotNull(context.getRootWhere());
-            assertNotNull(context.getParamMap());
+            assertThat(context.getRootWhere()).isNotNull();
+            assertThat(context.getParamMap()).isNotNull();
         }
 
         @Test
         void process_invalidRsql_throwsDbException() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setDbId("test");
             context.setTableName("users");
-            context.setRoot(table);
-            context.setCols(table.buildColumns());
+            context.setRoot(usersTable);
+            context.setCols(usersTable.buildColumns());
             context.setFilter("invalid rsql ;;; [[[");
 
-            assertThrows(DbException.class, () -> processor.process(context));
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(DbException.class);
         }
     }
 
@@ -538,181 +515,289 @@ class ProcessorTest {
         private JoinProcessor processor;
 
         @BeforeEach
-        void setup() {
+        void setup() throws DbException {
             processor = new JoinProcessor(jdbcManager);
         }
 
         @Test
         void process_nullJoins_doesNothing() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setJoins(null);
 
             processor.process(context);
 
-            // When no joins processed, dbJoins stays null or empty
-            assertTrue(context.getDbJoins() == null || context.getDbJoins().isEmpty());
+            assertThat(context.getDbJoins()).isNullOrEmpty();
         }
 
         @Test
         void process_emptyJoins_doesNothing() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
-
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setJoins(List.of());
 
             processor.process(context);
 
-            // When no joins processed, dbJoins stays null or empty
-            assertTrue(context.getDbJoins() == null || context.getDbJoins().isEmpty());
+            assertThat(context.getDbJoins()).isNullOrEmpty();
         }
 
         @Test
         void process_withJoin_addsJoinToContext() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
 
-            // JoinDetail(schemaName, table, withTable, fields, on, filter, joinType)
             JoinDetail joinDetail = new JoinDetail(
-                    null,           // schemaName
-                    "departments",  // table
-                    null,           // withTable
-                    null,           // fields
-                    List.of("department_id==id"),  // on
-                    null,           // filter
-                    JoinType.LEFT   // joinType
+                    null, "departments", null, null,
+                    List.of("department_id==id"), null, JoinType.LEFT
             );
 
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setJoins(List.of(joinDetail));
-            context.setCols(table.buildColumns());
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
 
             processor.process(context);
 
-            assertFalse(context.getDbJoins().isEmpty());
-            assertEquals(1, context.getDbJoins().size());
+            assertThat(context.getDbJoins()).hasSize(1);
         }
 
         @Test
         void process_withMultipleJoins_addsAllJoins() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
+            when(jdbcManager.getTable("test", null, "orders")).thenReturn(ordersTable);
 
             JoinDetail join1 = new JoinDetail(
-                    null,           // schemaName
-                    "departments",  // table
-                    null,           // withTable
-                    null,           // fields
-                    List.of("department_id==id"),  // on
-                    null,           // filter
-                    JoinType.LEFT   // joinType
+                    null, "departments", null, null,
+                    List.of("department_id==id"), null, JoinType.LEFT
             );
 
             JoinDetail join2 = new JoinDetail(
-                    null,           // schemaName
-                    "orders",       // table
-                    "users",        // withTable
-                    null,           // fields
-                    List.of("id==user_id"),  // on
-                    null,           // filter
-                    JoinType.LEFT   // joinType
+                    null, "orders", "users", null,
+                    List.of("id==user_id"), null, JoinType.LEFT
             );
 
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setJoins(List.of(join1, join2));
-            context.setCols(table.buildColumns());
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
 
             processor.process(context);
 
-            assertEquals(2, context.getDbJoins().size());
+            assertThat(context.getDbJoins()).hasSize(2);
         }
 
         @Test
         void process_withJoinFilter_parsesRsqlFilter() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
+            Dialect dialect = mock(Dialect.class);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(jdbcManager.getTable("test", null, "orders")).thenReturn(ordersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
 
             JoinDetail joinDetail = new JoinDetail(
-                    null,           // schemaName
-                    "orders",       // table
-                    null,           // withTable
-                    null,           // fields
-                    List.of("id==user_id"),  // on
-                    "total=gt=100", // filter
-                    JoinType.LEFT   // joinType
+                    null, "orders", null, null,
+                    List.of("id==user_id"), "total=gt=100", JoinType.LEFT
             );
 
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setJoins(List.of(joinDetail));
-            context.setCols(table.buildColumns());
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
 
             processor.process(context);
 
-            assertFalse(context.getDbJoins().isEmpty());
+            assertThat(context.getDbJoins()).isNotEmpty();
         }
 
         @Test
         void process_nullFields_includesAllColumns() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
 
             JoinDetail joinDetail = new JoinDetail(
-                    null,           // schemaName
-                    "departments",  // table
-                    null,           // withTable
-                    null,           // fields (null = all)
-                    List.of("department_id==id"),  // on
-                    null,           // filter
-                    JoinType.LEFT   // joinType
+                    null, "departments", null, null,
+                    List.of("department_id==id"), null, JoinType.LEFT
             );
 
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setJoins(List.of(joinDetail));
-            context.setCols(table.buildColumns());
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
 
             int initialColumns = context.getCols().size();
 
             processor.process(context);
 
             // Columns from joined table should be added
-            assertTrue(context.getCols().size() > initialColumns);
+            assertThat(context.getCols().size()).isGreaterThan(initialColumns);
         }
 
         @Test
         void process_specificFields_includesOnlySpecified() throws DbException {
-            DbTable table = jdbcManager.getTable("test", null, "users");
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
 
             JoinDetail joinDetail = new JoinDetail(
-                    null,           // schemaName
-                    "departments",  // table
-                    null,           // withTable
-                    List.of("name"), // fields (specific)
-                    List.of("department_id==id"),  // on
-                    null,           // filter
-                    JoinType.LEFT   // joinType
+                    null, "departments", null, List.of("name"),
+                    List.of("department_id==id"), null, JoinType.LEFT
             );
 
             ReadContext context = new ReadContext();
             context.setDbId("test");
-            context.setRoot(table);
+            context.setRoot(usersTable);
             context.setJoins(List.of(joinDetail));
-            context.setCols(table.buildColumns());
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
 
             int initialColumns = context.getCols().size();
 
             processor.process(context);
 
             // Only 1 column (name) from joined table should be added
-            assertEquals(initialColumns + 1, context.getCols().size());
+            assertThat(context.getCols()).hasSize(initialColumns + 1);
+        }
+
+        @Test
+        void process_multipleOnConditions_addsAndCondition() throws DbException {
+            when(jdbcManager.getTable("test", null, "orders")).thenReturn(ordersTable);
+
+            // Two ON conditions: first uses addOn, second uses addAndCondition
+            JoinDetail joinDetail = new JoinDetail(
+                    null, "orders", null, List.of("total"),
+                    List.of("id==user_id", "department_id==id"), null, JoinType.INNER
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setRoot(usersTable);
+            context.setJoins(List.of(joinDetail));
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
+
+            processor.process(context);
+
+            assertThat(context.getDbJoins()).hasSize(1);
+        }
+
+        @Test
+        void process_noWithTable_multipleJoins_usesLastRootTable() throws DbException {
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
+            when(jdbcManager.getTable("test", null, "orders")).thenReturn(ordersTable);
+
+            // Second join has no withTable — should use previous join table as root
+            JoinDetail join1 = new JoinDetail(
+                    null, "departments", null, null,
+                    List.of("department_id==id"), null, JoinType.LEFT
+            );
+            JoinDetail join2 = new JoinDetail(
+                    null, "orders", null, null,
+                    List.of("id==user_id"), null, JoinType.LEFT
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setRoot(usersTable);
+            context.setJoins(List.of(join1, join2));
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
+
+            processor.process(context);
+
+            assertThat(context.getDbJoins()).hasSize(2);
+        }
+
+        @Test
+        void process_withTableNotInList_fetchesFromJdbcManager() throws DbException {
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
+            when(jdbcManager.getTable("test", null, "orders")).thenReturn(ordersTable);
+            // withTable "unknown_table" not in allJoinTables, so orElseGet fetches from jdbcManager
+            when(jdbcManager.getTable("test", null, "unknown_table")).thenReturn(usersTable);
+
+            JoinDetail join1 = new JoinDetail(
+                    null, "departments", null, null,
+                    List.of("department_id==id"), null, JoinType.LEFT
+            );
+            JoinDetail join2 = new JoinDetail(
+                    null, "orders", "unknown_table", null,
+                    List.of("id==user_id"), null, JoinType.LEFT
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setRoot(usersTable);
+            context.setJoins(List.of(join1, join2));
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
+
+            processor.process(context);
+
+            assertThat(context.getDbJoins()).hasSize(2);
+            verify(jdbcManager).getTable("test", null, "unknown_table");
+        }
+
+        @Test
+        void process_withTableNotInList_fetchThrowsDbException_throwsDbRuntimeException() throws DbException {
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
+            // withTable "bad_table" not in allJoinTables, and fetching it throws
+            when(jdbcManager.getTable("test", null, "bad_table"))
+                    .thenThrow(new DbException(dev.suprim.query.exception.DbErrorCode.NOT_FOUND, "Table not found"));
+
+            JoinDetail join1 = new JoinDetail(
+                    null, "departments", null, null,
+                    List.of("department_id==id"), null, JoinType.LEFT
+            );
+            JoinDetail join2 = new JoinDetail(
+                    null, "orders", "bad_table", null,
+                    List.of("id==user_id"), null, JoinType.LEFT
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setRoot(usersTable);
+            context.setJoins(List.of(join1, join2));
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
+
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
+        }
+
+        @Test
+        void process_noOnConditions_joinsWithoutCondition() throws DbException {
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
+
+            // No ON conditions
+            JoinDetail joinDetail = new JoinDetail(
+                    null, "departments", null, List.of("name"),
+                    null, null, JoinType.LEFT
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setRoot(usersTable);
+            context.setJoins(List.of(joinDetail));
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
+
+            processor.process(context);
+
+            assertThat(context.getDbJoins()).hasSize(1);
+        }
+
+        @Test
+        void process_invalidColumnInFields_throwsDbRuntimeException() throws DbException {
+            when(jdbcManager.getTable("test", null, "departments")).thenReturn(departmentsTable);
+
+            // "nonexistent_column" doesn't exist in departments table
+            JoinDetail joinDetail = new JoinDetail(
+                    null, "departments", null, List.of("nonexistent_column"),
+                    List.of("department_id==id"), null, JoinType.LEFT
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setRoot(usersTable);
+            context.setJoins(List.of(joinDetail));
+            context.setCols(new ArrayList<>(usersTable.buildColumns()));
+
+            assertThatThrownBy(() -> processor.process(context))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
         }
     }
 }

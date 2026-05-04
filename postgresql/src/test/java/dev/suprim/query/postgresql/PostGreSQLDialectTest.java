@@ -3,17 +3,13 @@ package dev.suprim.query.postgresql;
 import dev.suprim.query.exception.DbException;
 import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbTable;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.jdbc.PgArray;
 import org.postgresql.util.PGobject;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.ObjectMapper;
 
-import java.sql.*;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.OffsetTime;
@@ -23,56 +19,18 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests for PostGreSQLDialect.
+ * Unit tests for PostGreSQLDialect — no Docker/Testcontainers required.
  */
-@Testcontainers
 class PostGreSQLDialectTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("testdb")
-            .withUsername("testuser")
-            .withPassword("testpass");
-
     private PostGreSQLDialect dialect;
-    private ObjectMapper objectMapper;
-
-    @BeforeAll
-    static void setUpDatabase() throws SQLException {
-        try (Connection conn = DriverManager.getConnection(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-             Statement stmt = conn.createStatement()) {
-
-            stmt.execute("""
-                CREATE TABLE test_types (
-                    id SERIAL PRIMARY KEY,
-                    json_col JSON,
-                    jsonb_col JSONB,
-                    timestamp_col TIMESTAMP,
-                    timestamptz_col TIMESTAMPTZ,
-                    timetz_col TIMETZ,
-                    int4_col INT4,
-                    int8_col INT8,
-                    numeric_col NUMERIC,
-                    varchar_array_col VARCHAR[],
-                    uuid_col UUID,
-                    bool_col BOOLEAN
-                )
-            """);
-        }
-    }
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        dialect = new PostGreSQLDialect(objectMapper);
+        dialect = new PostGreSQLDialect(new ObjectMapper());
     }
 
-    @Test
-    void isSupportedDb_shouldReturnTrueForPostgreSQL() {
-        // getCoverChar is protected, so we verify constructor works via isSupportedDb
-        assertThat(dialect.isSupportedDb("PostgreSQL", 16)).isTrue();
-    }
+    // ==================== isSupportedDb ====================
 
     @Test
     void isSupportedDb_postgresql_shouldReturnTrue() {
@@ -86,6 +44,8 @@ class PostGreSQLDialectTest {
         assertThat(dialect.isSupportedDb("MySQL", 8)).isFalse();
         assertThat(dialect.isSupportedDb("Oracle", 19)).isFalse();
     }
+
+    // ==================== renderTableName ====================
 
     @Test
     void renderTableName_shouldReturnQuotedSchemaTableAlias() {
@@ -105,6 +65,8 @@ class PostGreSQLDialectTest {
         assertThat(result).isEqualTo("\"public\".\"users\"");
     }
 
+    // ==================== processTypes — null value ====================
+
     @Test
     void processTypes_withNullValue_shouldSkip() throws DbException {
         DbTable table = createTableWithColumn("test_col", "varchar");
@@ -115,6 +77,8 @@ class PostGreSQLDialectTest {
 
         assertThat(data.get("test_col")).isNull();
     }
+
+    // ==================== processTypes — JSON/JSONB ====================
 
     @Test
     void processTypes_jsonType_shouldConvertToPGobject() throws DbException {
@@ -141,6 +105,21 @@ class PostGreSQLDialectTest {
         PGobject pg = (PGobject) data.get("jsonb_col");
         assertThat(pg.getType()).isEqualTo("jsonb");
     }
+
+    @Test
+    void processTypes_jsonWithCircularReference_shouldThrowException() {
+        DbTable table = createTableWithColumn("json_col", "json");
+        Map<String, Object> circular = new HashMap<>();
+        circular.put("self", circular);
+        Map<String, Object> data = new HashMap<>();
+        data.put("json_col", circular);
+
+        assertThatThrownBy(() -> dialect.processTypes(table, List.of("json_col"), data))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("Error converting to JSON");
+    }
+
+    // ==================== processTypes — timestamp ====================
 
     @Test
     void processTypes_timestampWithLocalDateTime_shouldKeepValue() throws DbException {
@@ -180,6 +159,8 @@ class PostGreSQLDialectTest {
                 .hasMessageContaining("Error converting to LocalDateTime");
     }
 
+    // ==================== processTypes — timestamptz ====================
+
     @Test
     void processTypes_timestamptzWithOffsetDateTime_shouldKeepValue() throws DbException {
         DbTable table = createTableWithColumn("tstz_col", "timestamptz");
@@ -193,7 +174,7 @@ class PostGreSQLDialectTest {
     }
 
     @Test
-    void processTypes_timestamptzWithString_shouldConvert() throws DbException {
+    void processTypes_timestamptzWithOffsetString_shouldConvert() throws DbException {
         DbTable table = createTableWithColumn("tstz_col", "timestamptz");
         Map<String, Object> data = new HashMap<>();
         data.put("tstz_col", "2024-01-15T10:30:00+07:00");
@@ -224,6 +205,8 @@ class PostGreSQLDialectTest {
                 .isInstanceOf(DbException.class)
                 .hasMessageContaining("Error converting to OffsetDateTime");
     }
+
+    // ==================== processTypes — timetz ====================
 
     @Test
     void processTypes_timetzWithOffsetTime_shouldKeepValue() throws DbException {
@@ -259,6 +242,8 @@ class PostGreSQLDialectTest {
                 .hasMessageContaining("Error converting to OffsetTime");
     }
 
+    // ==================== processTypes — int types ====================
+
     @Test
     void processTypes_intTypes_shouldConvertToLong() throws DbException {
         for (String intType : List.of("int4", "int2", "int8", "int")) {
@@ -272,6 +257,8 @@ class PostGreSQLDialectTest {
         }
     }
 
+    // ==================== processTypes — numeric ====================
+
     @Test
     void processTypes_numericType_shouldConvertToDouble() throws DbException {
         DbTable table = createTableWithColumn("num_col", "numeric");
@@ -282,6 +269,8 @@ class PostGreSQLDialectTest {
 
         assertThat(data.get("num_col")).isEqualTo(3.14159);
     }
+
+    // ==================== processTypes — year ====================
 
     @Test
     void processTypes_yearType_shouldConvertToInteger() throws DbException {
@@ -294,6 +283,8 @@ class PostGreSQLDialectTest {
         assertThat(data.get("year_col")).isEqualTo(2024);
     }
 
+    // ==================== processTypes — _varchar (array) ====================
+
     @Test
     void processTypes_varcharArray_shouldConvertToArrayTypeValueHolder() throws DbException {
         DbTable table = createTableWithColumn("arr_col", "_varchar");
@@ -304,6 +295,8 @@ class PostGreSQLDialectTest {
 
         assertThat(data.get("arr_col")).isNotNull();
     }
+
+    // ==================== processTypes — vector ====================
 
     @Test
     void processTypes_vectorWithString_shouldConvertToPGobject() throws DbException {
@@ -316,6 +309,7 @@ class PostGreSQLDialectTest {
         assertThat(data.get("vec_col")).isInstanceOf(PGobject.class);
         PGobject pg = (PGobject) data.get("vec_col");
         assertThat(pg.getType()).isEqualTo("vector");
+        assertThat(pg.getValue()).isEqualTo("[1.0,2.0,3.0]");
     }
 
     @Test
@@ -345,6 +339,39 @@ class PostGreSQLDialectTest {
     }
 
     @Test
+    void processTypes_vectorWithUnknownType_shouldUseToString() throws DbException {
+        DbTable table = createTableWithColumn("vec_col", "vector(3)");
+        Map<String, Object> data = new HashMap<>();
+        List<Double> vectorList = List.of(1.0, 2.0, 3.0);
+        data.put("vec_col", vectorList);
+
+        dialect.processTypes(table, List.of("vec_col"), data);
+
+        assertThat(data.get("vec_col")).isInstanceOf(PGobject.class);
+        PGobject pg = (PGobject) data.get("vec_col");
+        assertThat(pg.getValue()).isEqualTo(vectorList.toString());
+    }
+
+    @Test
+    void processTypes_vectorWithBrokenToString_shouldThrowDbException() {
+        DbTable table = createTableWithColumn("vec_col", "vector(3)");
+        Map<String, Object> data = new HashMap<>();
+        Object brokenValue = new Object() {
+            @Override
+            public String toString() {
+                throw new RuntimeException("toString() broken");
+            }
+        };
+        data.put("vec_col", brokenValue);
+
+        assertThatThrownBy(() -> dialect.processTypes(table, List.of("vec_col"), data))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("Error converting to VECTOR");
+    }
+
+    // ==================== processTypes — uuid ====================
+
+    @Test
     void processTypes_uuidWithUUID_shouldKeepValue() throws DbException {
         DbTable table = createTableWithColumn("uuid_col", "uuid");
         UUID uuid = UUID.randomUUID();
@@ -370,16 +397,54 @@ class PostGreSQLDialectTest {
     }
 
     @Test
-    void processTypes_complexValueWithUnknownType_shouldLogWarning() throws DbException {
+    void processTypes_uuidWithNonUuidNonString_shouldNotConvert() throws DbException {
+        DbTable table = createTableWithColumn("uuid_col", "uuid");
+        Integer intValue = 12345;
+        Map<String, Object> data = new HashMap<>();
+        data.put("uuid_col", intValue);
+
+        dialect.processTypes(table, List.of("uuid_col"), data);
+
+        assertThat(data.get("uuid_col")).isEqualTo(intValue);
+    }
+
+    // ==================== processTypes — complex value with unknown type ====================
+
+    @Test
+    void processTypes_complexMapValueWithUnknownType_shouldLogWarning() throws DbException {
         DbTable table = createTableWithColumn("other_col", "text");
         Map<String, Object> data = new HashMap<>();
         data.put("other_col", Map.of("key", "value"));
 
         dialect.processTypes(table, List.of("other_col"), data);
 
-        // Should not throw, just logs warning
         assertThat(data.get("other_col")).isInstanceOf(Map.class);
     }
+
+    @Test
+    void processTypes_complexListValueWithUnknownType_shouldLogWarning() throws DbException {
+        DbTable table = createTableWithColumn("list_col", "text");
+        Map<String, Object> data = new HashMap<>();
+        data.put("list_col", List.of("item1", "item2"));
+
+        dialect.processTypes(table, List.of("list_col"), data);
+
+        assertThat(data.get("list_col")).isInstanceOf(List.class);
+    }
+
+    @Test
+    void processTypes_unknownTypeWithSimpleValue_shouldNotModify() throws DbException {
+        DbTable table = createTableWithColumn("other_col", "citext");
+        Map<String, Object> data = new HashMap<>();
+        data.put("other_col", "hello");
+
+        dialect.processTypes(table, List.of("other_col"), data);
+
+        // Value passes through unmodified — no branch matches
+        assertThat(data.get("other_col")).isEqualTo("hello");
+    }
+
+    // ==================== convertJsonToVO ====================
 
     @Test
     void convertJsonToVO_withValidPGobject_shouldReturnObject() throws Exception {
@@ -411,17 +476,7 @@ class PostGreSQLDialectTest {
                 .hasMessageContaining("Error converting to JSON");
     }
 
-    @Test
-    void convertToStringArray_withValidPgArray_shouldReturnList() throws Exception {
-        try (Connection conn = DriverManager.getConnection(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
-            Array sqlArray = conn.createArrayOf("varchar", new String[]{"a", "b", "c"});
-
-            List<String> result = dialect.convertToStringArray(sqlArray);
-
-            assertThat(result).containsExactly("a", "b", "c");
-        }
-    }
+    // ==================== convertToStringArray ====================
 
     @Test
     void convertToStringArray_withNull_shouldReturnEmptyList() throws DbException {
@@ -431,6 +486,28 @@ class PostGreSQLDialectTest {
     }
 
     @Test
+    void convertToStringArray_withExceptionInGetArray_shouldThrowDbException() throws SQLException {
+        PgArray mockArray = mock(PgArray.class);
+        when(mockArray.getArray()).thenThrow(new SQLException("Connection closed"));
+
+        assertThatThrownBy(() -> dialect.convertToStringArray(mockArray))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("Error converting to Array type");
+    }
+
+    @Test
+    void convertToStringArray_withValidArray_shouldReturnList() throws Exception {
+        PgArray mockArray = mock(PgArray.class);
+        when(mockArray.getArray()).thenReturn(new String[]{"a", "b", "c"});
+
+        List<String> result = dialect.convertToStringArray(mockArray);
+
+        assertThat(result).containsExactly("a", "b", "c");
+    }
+
+    // ==================== convertTimestamp ====================
+
+    @Test
     void convertTimestamp_withValidString_shouldReturnLocalDateTime() throws DbException {
         LocalDateTime result = dialect.convertTimestamp("2024-01-15T10:30:00");
 
@@ -438,6 +515,8 @@ class PostGreSQLDialectTest {
         assertThat(result.getMonthValue()).isEqualTo(1);
         assertThat(result.getDayOfMonth()).isEqualTo(15);
     }
+
+    // ==================== processValue (boolean override) ====================
 
     @Test
     void processValue_withBooleanType_shouldParseBoolean() throws DbException {
@@ -455,88 +534,7 @@ class PostGreSQLDialectTest {
         assertThat(result).isEqualTo("test");
     }
 
-    @Test
-    void processTypes_uuidWithNonUuidNonString_shouldNotConvert() throws DbException {
-        // When UUID column receives a value that is neither UUID nor String, it should be ignored
-        DbTable table = createTableWithColumn("uuid_col", "uuid");
-        Integer intValue = 12345;
-        Map<String, Object> data = new HashMap<>();
-        data.put("uuid_col", intValue);
-
-        dialect.processTypes(table, List.of("uuid_col"), data);
-
-        // Value should remain unchanged (the code silently ignores non-UUID, non-String values)
-        assertThat(data.get("uuid_col")).isEqualTo(intValue);
-    }
-
-    @Test
-    void processTypes_complexListValue_shouldLogWarning() throws DbException {
-        DbTable table = createTableWithColumn("list_col", "text");
-        Map<String, Object> data = new HashMap<>();
-        data.put("list_col", List.of("item1", "item2"));
-
-        dialect.processTypes(table, List.of("list_col"), data);
-
-        // Should not throw, just logs warning - value remains as List
-        assertThat(data.get("list_col")).isInstanceOf(List.class);
-    }
-
-    @Test
-    void processTypes_vectorWithUnknownType_shouldUseToString() throws DbException {
-        DbTable table = createTableWithColumn("vec_col", "vector(3)");
-        Map<String, Object> data = new HashMap<>();
-        // Use a List which is neither String, float[], nor double[]
-        List<Double> vectorList = List.of(1.0, 2.0, 3.0);
-        data.put("vec_col", vectorList);
-
-        dialect.processTypes(table, List.of("vec_col"), data);
-
-        assertThat(data.get("vec_col")).isInstanceOf(PGobject.class);
-        PGobject pg = (PGobject) data.get("vec_col");
-        assertThat(pg.getValue()).isEqualTo(vectorList.toString());
-    }
-
-    @Test
-    void processTypes_jsonWithCircularReference_shouldThrowException() {
-        DbTable table = createTableWithColumn("json_col", "json");
-        Map<String, Object> circular = new HashMap<>();
-        circular.put("self", circular); // Circular reference
-        Map<String, Object> data = new HashMap<>();
-        data.put("json_col", circular);
-
-        // Circular reference should cause JSON serialization to fail
-        assertThatThrownBy(() -> dialect.processTypes(table, List.of("json_col"), data))
-                .isInstanceOf(DbException.class)
-                .hasMessageContaining("Error converting to JSON");
-    }
-
-    @Test
-    void convertToStringArray_withExceptionInGetArray_shouldThrowDbException() throws SQLException {
-        PgArray mockArray = mock(PgArray.class);
-        when(mockArray.getArray()).thenThrow(new SQLException("Connection closed"));
-
-        assertThatThrownBy(() -> dialect.convertToStringArray(mockArray))
-                .isInstanceOf(DbException.class)
-                .hasMessageContaining("Error converting to Array type");
-    }
-
-    @Test
-    void processTypes_vectorWithBrokenToString_shouldThrowDbException() {
-        DbTable table = createTableWithColumn("vec_col", "vector(3)");
-        Map<String, Object> data = new HashMap<>();
-        // Create an object with broken toString() that will trigger exception in convertToVector
-        Object brokenValue = new Object() {
-            @Override
-            public String toString() {
-                throw new RuntimeException("toString() broken");
-            }
-        };
-        data.put("vec_col", brokenValue);
-
-        assertThatThrownBy(() -> dialect.processTypes(table, List.of("vec_col"), data))
-                .isInstanceOf(DbException.class)
-                .hasMessageContaining("Error converting to VECTOR");
-    }
+    // ==================== helpers ====================
 
     private DbTable createTestTable(String schema, String name, String alias) {
         return new DbTable(schema, name, schema + "." + name, alias, List.of(), "TABLE", "\"");

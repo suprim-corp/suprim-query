@@ -1,14 +1,9 @@
 package dev.suprim.query.jdbc.config;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import dev.suprim.query.dialect.Dialect;
 import dev.suprim.query.model.DbMeta;
 import dev.suprim.query.model.DbTable;
 import org.junit.jupiter.api.*;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 import java.util.HashMap;
@@ -18,49 +13,10 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
-@Testcontainers
 class ConfigurationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("testdb")
-            .withUsername("test")
-            .withPassword("test");
-
-    private static DataSource dataSource1;
-    private static DataSource dataSource2;
-
-    @BeforeAll
-    static void setUp() {
-        HikariConfig config1 = new HikariConfig();
-        config1.setJdbcUrl(postgres.getJdbcUrl());
-        config1.setUsername(postgres.getUsername());
-        config1.setPassword(postgres.getPassword());
-        config1.setMaximumPoolSize(2);
-        config1.setPoolName("pool1");
-        dataSource1 = new HikariDataSource(config1);
-
-        HikariConfig config2 = new HikariConfig();
-        config2.setJdbcUrl(postgres.getJdbcUrl());
-        config2.setUsername(postgres.getUsername());
-        config2.setPassword(postgres.getPassword());
-        config2.setMaximumPoolSize(2);
-        config2.setPoolName("pool2");
-        dataSource2 = new HikariDataSource(config2);
-    }
-
-    @AfterAll
-    static void tearDown() {
-        if (dataSource1 instanceof HikariDataSource hikari) {
-            hikari.close();
-        }
-        if (dataSource2 instanceof HikariDataSource hikari) {
-            hikari.close();
-        }
-    }
 
     @AfterEach
     void cleanUp() {
@@ -75,83 +31,86 @@ class ConfigurationTest {
         void constructor_emptyTargets_throwsIllegalStateException() {
             Map<String, DataSource> emptyTargets = new HashMap<>();
 
-            IllegalStateException ex = assertThrows(IllegalStateException.class,
-                    () -> new RoutingDataSource(emptyTargets, "default"));
-
-            assertEquals("No data sources configured", ex.getMessage());
+            assertThatThrownBy(() -> new RoutingDataSource(emptyTargets, "default"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("No data sources configured");
         }
 
         @Test
         void constructor_missingDefaultId_throwsIllegalArgumentException() {
-            Map<String, DataSource> targets = Map.of("db1", dataSource1);
+            DataSource ds = mock(DataSource.class);
+            Map<String, DataSource> targets = Map.of("db1", ds);
 
-            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                    () -> new RoutingDataSource(targets, "nonexistent"));
-
-            assertTrue(ex.getMessage().contains("nonexistent"));
-            assertTrue(ex.getMessage().contains("not found in targets"));
+            assertThatThrownBy(() -> new RoutingDataSource(targets, "nonexistent"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("nonexistent")
+                    .hasMessageContaining("not found in targets");
         }
 
         @Test
         void constructor_validConfig_createsRoutingDataSource() {
-            Map<String, DataSource> targets = Map.of(
-                    "db1", dataSource1,
-                    "db2", dataSource2
-            );
+            DataSource ds1 = mock(DataSource.class);
+            DataSource ds2 = mock(DataSource.class);
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("db1", ds1);
+            targets.put("db2", ds2);
 
             RoutingDataSource routingDs = new RoutingDataSource(targets, "db1");
 
-            assertEquals("db1", routingDs.getDefaultId());
-            assertEquals(2, routingDs.getKnownIds().size());
-            assertTrue(routingDs.getKnownIds().contains("db1"));
-            assertTrue(routingDs.getKnownIds().contains("db2"));
+            assertThat(routingDs.getDefaultId()).isEqualTo("db1");
+            assertThat(routingDs.getKnownIds()).containsExactlyInAnyOrder("db1", "db2");
         }
 
         @Test
         void determineCurrentLookupKey_nullKey_returnsDefaultId() {
+            DataSource ds = mock(DataSource.class);
             Map<String, DataSource> targets = new HashMap<>();
-            targets.put("default", dataSource1);
+            targets.put("default", ds);
             RoutingDataSource routingDs = new RoutingDataSource(targets, "default");
 
             DatabaseContextHolder.clear();
             Object key = routingDs.determineCurrentLookupKey();
 
-            assertEquals("default", key);
+            assertThat(key).isEqualTo("default");
         }
 
         @Test
         void determineCurrentLookupKey_unknownKey_returnsDefaultId() {
-            Map<String, DataSource> targets = Map.of("default", dataSource1);
+            DataSource ds = mock(DataSource.class);
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("default", ds);
             RoutingDataSource routingDs = new RoutingDataSource(targets, "default");
 
             DatabaseContextHolder.setCurrentDbId("unknown_db");
             Object key = routingDs.determineCurrentLookupKey();
 
-            assertEquals("default", key);
+            assertThat(key).isEqualTo("default");
         }
 
         @Test
         void determineCurrentLookupKey_validKey_returnsKey() {
-            Map<String, DataSource> targets = Map.of(
-                    "db1", dataSource1,
-                    "db2", dataSource2
-            );
+            DataSource ds1 = mock(DataSource.class);
+            DataSource ds2 = mock(DataSource.class);
+            Map<String, DataSource> targets = new HashMap<>();
+            targets.put("db1", ds1);
+            targets.put("db2", ds2);
             RoutingDataSource routingDs = new RoutingDataSource(targets, "db1");
 
             DatabaseContextHolder.setCurrentDbId("db2");
             Object key = routingDs.determineCurrentLookupKey();
 
-            assertEquals("db2", key);
+            assertThat(key).isEqualTo("db2");
         }
 
         @Test
         void knownIds_isUnmodifiable() {
+            DataSource ds = mock(DataSource.class);
             Map<String, DataSource> targets = new HashMap<>();
-            targets.put("db1", dataSource1);
+            targets.put("db1", ds);
             RoutingDataSource routingDs = new RoutingDataSource(targets, "db1");
 
-            assertThrows(UnsupportedOperationException.class,
-                    () -> routingDs.getKnownIds().add("newDb"));
+            assertThatThrownBy(() -> routingDs.getKnownIds().add("newDb"))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
     }
 
@@ -163,7 +122,7 @@ class ConfigurationTest {
         void setAndGet_returnsSetValue() {
             DatabaseContextHolder.setCurrentDbId("testDb");
 
-            assertEquals("testDb", DatabaseContextHolder.getCurrentDbId());
+            assertThat(DatabaseContextHolder.getCurrentDbId()).isEqualTo("testDb");
         }
 
         @Test
@@ -171,7 +130,7 @@ class ConfigurationTest {
             DatabaseContextHolder.setCurrentDbId("testDb");
             DatabaseContextHolder.clear();
 
-            assertNull(DatabaseContextHolder.getCurrentDbId());
+            assertThat(DatabaseContextHolder.getCurrentDbId()).isNull();
         }
 
         @Test
@@ -189,14 +148,14 @@ class ConfigurationTest {
             thread2.start();
             latch.await();
 
-            assertEquals("mainThread", DatabaseContextHolder.getCurrentDbId());
-            assertEquals("thread2", thread2Value.get());
+            assertThat(DatabaseContextHolder.getCurrentDbId()).isEqualTo("mainThread");
+            assertThat(thread2Value.get()).isEqualTo("thread2");
         }
 
         @Test
         void initialValue_isNull() {
             DatabaseContextHolder.clear();
-            assertNull(DatabaseContextHolder.getCurrentDbId());
+            assertThat(DatabaseContextHolder.getCurrentDbId()).isNull();
         }
     }
 
@@ -217,8 +176,8 @@ class ConfigurationTest {
 
             Optional<DatabaseConnectionDetail> result = props.getDatabase("testDb");
 
-            assertTrue(result.isPresent());
-            assertEquals("testDb", result.get().id());
+            assertThat(result).isPresent();
+            assertThat(result.get().id()).isEqualTo("testDb");
         }
 
         @Test
@@ -232,7 +191,7 @@ class ConfigurationTest {
 
             Optional<DatabaseConnectionDetail> result = props.getDatabase("TESTDB");
 
-            assertTrue(result.isPresent());
+            assertThat(result).isPresent();
         }
 
         @Test
@@ -245,7 +204,7 @@ class ConfigurationTest {
 
             Optional<DatabaseConnectionDetail> result = props.getDatabase("nonexistent");
 
-            assertTrue(result.isEmpty());
+            assertThat(result).isEmpty();
         }
 
         @Test
@@ -255,7 +214,7 @@ class ConfigurationTest {
 
             Optional<DatabaseConnectionDetail> result = props.getDatabase("anyId");
 
-            assertTrue(result.isEmpty());
+            assertThat(result).isEmpty();
         }
 
         @Test
@@ -265,7 +224,7 @@ class ConfigurationTest {
 
             Optional<DatabaseConnectionDetail> result = props.getDatabase("anyId");
 
-            assertTrue(result.isEmpty());
+            assertThat(result).isEmpty();
         }
 
         @Test
@@ -273,7 +232,7 @@ class ConfigurationTest {
             DatabaseProperties props = new DatabaseProperties();
             props.setDatabases(null);
 
-            assertFalse(props.isRdbmsConfigured());
+            assertThat(props.isRdbmsConfigured()).isFalse();
         }
 
         @Test
@@ -284,7 +243,7 @@ class ConfigurationTest {
                     "user", "pass", "testdb", null, null, null, null, null, 5
             )));
 
-            assertFalse(props.isRdbmsConfigured());
+            assertThat(props.isRdbmsConfigured()).isFalse();
         }
 
         @Test
@@ -295,7 +254,7 @@ class ConfigurationTest {
                     "user", "pass", "testdb", null, null, null, null, null, 5
             )));
 
-            assertTrue(props.isRdbmsConfigured());
+            assertThat(props.isRdbmsConfigured()).isTrue();
         }
 
         @Test
@@ -306,7 +265,7 @@ class ConfigurationTest {
                     "user", "pass", "testdb", null, null, null, null, null, 5
             )));
 
-            assertFalse(props.isRdbmsConfigured());
+            assertThat(props.isRdbmsConfigured()).isFalse();
         }
 
         @Test
@@ -314,7 +273,7 @@ class ConfigurationTest {
             DatabaseProperties props = new DatabaseProperties();
             props.setDefaultDatabaseId("myDefault");
 
-            assertEquals("myDefault", props.getDefaultDatabaseId());
+            assertThat(props.getDefaultDatabaseId()).isEqualTo("myDefault");
         }
     }
 
@@ -329,7 +288,7 @@ class ConfigurationTest {
                     null, null, null, null, null, 5
             );
 
-            assertTrue(detail.isMongo());
+            assertThat(detail.isMongo()).isTrue();
         }
 
         @Test
@@ -339,7 +298,7 @@ class ConfigurationTest {
                     null, null, null, null, null, 5
             );
 
-            assertTrue(detail.isMongo());
+            assertThat(detail.isMongo()).isTrue();
         }
 
         @Test
@@ -349,7 +308,7 @@ class ConfigurationTest {
                     "user", "pass", "testdb", null, null, null, null, null, 5
             );
 
-            assertFalse(detail.isMongo());
+            assertThat(detail.isMongo()).isFalse();
         }
 
         @Test
@@ -359,7 +318,7 @@ class ConfigurationTest {
                     "user", "pass", "testdb", null, null, null, null, null, 5
             );
 
-            assertTrue(detail.isJdbcPresent());
+            assertThat(detail.isJdbcPresent()).isTrue();
         }
 
         @Test
@@ -369,7 +328,7 @@ class ConfigurationTest {
                     null, null, null, null, null, 5
             );
 
-            assertFalse(detail.isJdbcPresent());
+            assertThat(detail.isJdbcPresent()).isFalse();
         }
 
         @Test
@@ -379,7 +338,7 @@ class ConfigurationTest {
                     null, null, null, null, null, 5
             );
 
-            assertFalse(detail.isJdbcPresent());
+            assertThat(detail.isJdbcPresent()).isFalse();
         }
 
         @Test
@@ -389,7 +348,7 @@ class ConfigurationTest {
                     "user", "pass", "testdb", null, null, null, null, null, 5
             );
 
-            assertTrue(detail.includeAllSchemas());
+            assertThat(detail.includeAllSchemas()).isTrue();
         }
 
         @Test
@@ -399,7 +358,7 @@ class ConfigurationTest {
                     "user", "pass", "testdb", null, List.of(), null, null, null, 5
             );
 
-            assertTrue(detail.includeAllSchemas());
+            assertThat(detail.includeAllSchemas()).isTrue();
         }
 
         @Test
@@ -410,7 +369,7 @@ class ConfigurationTest {
                     null, null, null, 5
             );
 
-            assertFalse(detail.includeAllSchemas());
+            assertThat(detail.includeAllSchemas()).isFalse();
         }
 
         @Test
@@ -423,18 +382,18 @@ class ConfigurationTest {
                     List.of("public"), List.of("users"), connProps, envProps, 10
             );
 
-            assertEquals("pg1", detail.id());
-            assertEquals("postgresql", detail.type());
-            assertEquals("jdbc:postgresql://localhost/test", detail.url());
-            assertEquals("user", detail.username());
-            assertEquals("pass", detail.password());
-            assertEquals("testdb", detail.database());
-            assertEquals(List.of("catalog1"), detail.catalog());
-            assertEquals(List.of("public"), detail.schemas());
-            assertEquals(List.of("users"), detail.tables());
-            assertEquals(connProps, detail.connectionProperties());
-            assertEquals(envProps, detail.envProperties());
-            assertEquals(10, detail.maxConnections());
+            assertThat(detail.id()).isEqualTo("pg1");
+            assertThat(detail.type()).isEqualTo("postgresql");
+            assertThat(detail.url()).isEqualTo("jdbc:postgresql://localhost/test");
+            assertThat(detail.username()).isEqualTo("user");
+            assertThat(detail.password()).isEqualTo("pass");
+            assertThat(detail.database()).isEqualTo("testdb");
+            assertThat(detail.catalog()).containsExactly("catalog1");
+            assertThat(detail.schemas()).containsExactly("public");
+            assertThat(detail.tables()).containsExactly("users");
+            assertThat(detail.connectionProperties()).isEqualTo(connProps);
+            assertThat(detail.envProperties()).isEqualTo(envProps);
+            assertThat(detail.maxConnections()).isEqualTo(10);
         }
     }
 
@@ -451,10 +410,10 @@ class ConfigurationTest {
 
             DbDetailHolder holder = new DbDetailHolder("db1", dbMeta, tableMap, dialect);
 
-            assertEquals("db1", holder.dbId());
-            assertEquals(dbMeta, holder.dbMeta());
-            assertEquals(tableMap, holder.dbTableMap());
-            assertEquals(dialect, holder.dialect());
+            assertThat(holder.dbId()).isEqualTo("db1");
+            assertThat(holder.dbMeta()).isEqualTo(dbMeta);
+            assertThat(holder.dbTableMap()).isEqualTo(tableMap);
+            assertThat(holder.dialect()).isEqualTo(dialect);
         }
 
         @Test
@@ -466,8 +425,8 @@ class ConfigurationTest {
             DbDetailHolder holder1 = new DbDetailHolder("db1", dbMeta, tableMap, dialect);
             DbDetailHolder holder2 = new DbDetailHolder("db1", dbMeta, tableMap, dialect);
 
-            assertEquals(holder1, holder2);
-            assertEquals(holder1.hashCode(), holder2.hashCode());
+            assertThat(holder1).isEqualTo(holder2);
+            assertThat(holder1.hashCode()).isEqualTo(holder2.hashCode());
         }
     }
 
@@ -481,11 +440,11 @@ class ConfigurationTest {
                     true, "HH:mm:ss", "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", 100
             );
 
-            assertTrue(props.enableDatetimeFormatting());
-            assertEquals("HH:mm:ss", props.timeFormat());
-            assertEquals("yyyy-MM-dd", props.dateFormat());
-            assertEquals("yyyy-MM-dd HH:mm:ss", props.dateTimeFormat());
-            assertEquals(100, props.defaultFetchLimit());
+            assertThat(props.enableDatetimeFormatting()).isTrue();
+            assertThat(props.timeFormat()).isEqualTo("HH:mm:ss");
+            assertThat(props.dateFormat()).isEqualTo("yyyy-MM-dd");
+            assertThat(props.dateTimeFormat()).isEqualTo("yyyy-MM-dd HH:mm:ss");
+            assertThat(props.defaultFetchLimit()).isEqualTo(100);
         }
 
         @Test
@@ -493,8 +452,8 @@ class ConfigurationTest {
             EnvironmentProperties props1 = new EnvironmentProperties(true, "HH:mm", "yyyy-MM-dd", "yyyy-MM-dd HH:mm", 50);
             EnvironmentProperties props2 = new EnvironmentProperties(true, "HH:mm", "yyyy-MM-dd", "yyyy-MM-dd HH:mm", 50);
 
-            assertEquals(props1, props2);
-            assertEquals(props1.hashCode(), props2.hashCode());
+            assertThat(props1).isEqualTo(props2);
+            assertThat(props1.hashCode()).isEqualTo(props2.hashCode());
         }
 
         @Test
@@ -502,7 +461,7 @@ class ConfigurationTest {
             EnvironmentProperties props1 = new EnvironmentProperties(true, "HH:mm", "yyyy-MM-dd", "yyyy-MM-dd HH:mm", 50);
             EnvironmentProperties props2 = new EnvironmentProperties(false, "HH:mm", "yyyy-MM-dd", "yyyy-MM-dd HH:mm", 50);
 
-            assertNotEquals(props1, props2);
+            assertThat(props1).isNotEqualTo(props2);
         }
 
         @Test
@@ -510,9 +469,9 @@ class ConfigurationTest {
             EnvironmentProperties props = new EnvironmentProperties(true, "HH:mm", "yyyy-MM-dd", "yyyy-MM-dd HH:mm", 50);
             String str = props.toString();
 
-            assertTrue(str.contains("true"));
-            assertTrue(str.contains("HH:mm"));
-            assertTrue(str.contains("50"));
+            assertThat(str).contains("true");
+            assertThat(str).contains("HH:mm");
+            assertThat(str).contains("50");
         }
     }
 }

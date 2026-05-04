@@ -1,0 +1,4 @@
+jdk:
+  - 21
+install:
+  - mvn install -DskipTests

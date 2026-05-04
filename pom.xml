@@ -306,10 +306,4 @@
         </plugins>
     </build>
 
-    <distributionManagement>
-        <repository>
-            <id>github</id>
-            <url>https://maven.pkg.github.com/suprim-corp/suprim-query</url>
-        </repository>
-    </distributionManagement>
 </project>

@@ -33,6 +33,13 @@ class CrossTableColumnResolverTest {
     }
 
     @Test
+    void constructor_shouldBeInstantiable() {
+        // Cover the implicit default constructor (line 20)
+        CrossTableColumnResolver resolver = new CrossTableColumnResolver();
+        assertThat(resolver).isNotNull();
+    }
+
+    @Test
     void resolveColumn_withSimpleColumnName_shouldUseFallbackTable() throws DbException {
         DbTable users = createTable("users", "u");
         List<DbTable> allTables = List.of(users);
@@ -208,5 +215,122 @@ class CrossTableColumnResolverTest {
 
         assertThat(result.name()).isEqualTo("id");
         assertThat(result.tableName()).isEqualTo("products");
+    }
+
+    @Test
+    void resolveColumn_withDotPrefix_andNullAllTables_shouldFallback() throws DbException {
+        // This exercises findTableByPrefix with null allTables (line 109 null branch)
+        DbTable users = createTable("users", "u");
+
+        // "foo.id" has a dot, so it enters the dot-prefix path, calls findTableByPrefix(null)
+        // findTableByPrefix returns null → falls through to fallback
+        // fallback tries buildColumn("foo.id") which won't exist → but let's use a column that does
+        // Actually "foo" won't match any table, so it falls through to fallback with selector "foo.id"
+        // which won't be found in users table
+        assertThatThrownBy(() -> CrossTableColumnResolver.resolveColumn("foo.id", null, users))
+                .isInstanceOf(DbException.class);
+    }
+
+    @Test
+    void resolveColumn_withDotPrefix_andEmptyAllTables_shouldFallback() throws DbException {
+        // This exercises findTableByPrefix with empty allTables (line 109 isEmpty branch)
+        DbTable users = createTable("users", "u");
+
+        assertThatThrownBy(() -> CrossTableColumnResolver.resolveColumn("foo.id", new ArrayList<>(), users))
+                .isInstanceOf(DbException.class);
+    }
+
+    @Test
+    void resolveColumn_withDotPrefix_nullAllTables_nullFallback_shouldThrow() {
+        // dot-prefix path → findTableByPrefix(null) → returns null → fallback is null → throws
+        assertThatThrownBy(() -> CrossTableColumnResolver.resolveColumn("foo.id", null, null))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("No fallback table available");
+    }
+
+    @Test
+    void resolveColumn_withDotPrefix_aliasDoesNotMatch_shouldContinueLoop() throws DbException {
+        // Table has a valid alias "x" but prefix is "y" which doesn't match name or alias of first table.
+        // This exercises the non-matching alias branch (nonNull && !isBlank && !equalsIgnoreCase) on first iteration.
+        DbTable tops = new DbTable(
+                "public",
+                "tops",
+                "\"public\".\"tops\"",
+                "x",
+                List.of(
+                        new DbColumn("tops", "color", "", "x", false, "varchar", false, false, String.class, "\"", null)
+                ),
+                "table",
+                "\""
+        );
+        DbTable bottoms = new DbTable(
+                "public",
+                "bottoms",
+                "\"public\".\"bottoms\"",
+                "y",
+                List.of(
+                        new DbColumn("bottoms", "color", "", "y", false, "varchar", false, false, String.class, "\"", null)
+                ),
+                "table",
+                "\""
+        );
+        List<DbTable> allTables = List.of(tops, bottoms);
+
+        // prefix "y" doesn't match tops.name ("tops") nor tops.alias ("x"),
+        // but matches bottoms.alias ("y") — exercises the non-matching alias branch on first iteration
+        DbColumn result = CrossTableColumnResolver.resolveColumn("y.color", allTables, tops);
+
+        assertThat(result.name()).isEqualTo("color");
+        assertThat(result.tableName()).isEqualTo("bottoms");
+    }
+
+    @Test
+    void resolveColumn_withDotPrefix_tableHasNullAlias_prefixDoesNotMatchName_shouldSkip() throws DbException {
+        // Table with null alias where prefix doesn't match name → exercises nonNull(alias) == false branch at line 127
+        DbTable tableNullAlias = new DbTable(
+                "public",
+                "orders",
+                "\"public\".\"orders\"",
+                null,
+                List.of(
+                        new DbColumn("orders", "id", "", null, false, "uuid", true, false, Object.class, "\"", null)
+                ),
+                "table",
+                "\""
+        );
+        DbTable users = createTable("users", "u");
+        List<DbTable> allTables = List.of(tableNullAlias, users);
+
+        // prefix "u" doesn't match orders.name, orders.alias is null → skips alias check
+        // then matches users by alias "u"
+        DbColumn result = CrossTableColumnResolver.resolveColumn("u.name", allTables, users);
+
+        assertThat(result.name()).isEqualTo("name");
+        assertThat(result.tableName()).isEqualTo("users");
+    }
+
+    @Test
+    void resolveColumn_withDotPrefix_tableHasBlankAlias_prefixDoesNotMatchName_shouldSkip() throws DbException {
+        // Table with blank alias where prefix doesn't match name → exercises !alias.isBlank() == false branch at line 127
+        DbTable tableBlankAlias = new DbTable(
+                "public",
+                "orders",
+                "\"public\".\"orders\"",
+                "  ",
+                List.of(
+                        new DbColumn("orders", "id", "", "  ", false, "uuid", true, false, Object.class, "\"", null)
+                ),
+                "table",
+                "\""
+        );
+        DbTable users = createTable("users", "u");
+        List<DbTable> allTables = List.of(tableBlankAlias, users);
+
+        // prefix "u" doesn't match orders.name, orders.alias is blank → skips alias check
+        // then matches users by alias "u"
+        DbColumn result = CrossTableColumnResolver.resolveColumn("u.name", allTables, users);
+
+        assertThat(result.name()).isEqualTo("name");
+        assertThat(result.tableName()).isEqualTo("users");
     }
 }

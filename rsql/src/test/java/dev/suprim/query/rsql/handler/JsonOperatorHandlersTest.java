@@ -212,4 +212,22 @@ class JsonOperatorHandlersTest extends OperatorHandlerTestBase {
                 .isInstanceOf(DbException.class)
                 .hasMessageContaining("JSONB arrow operator requires format: key::value");
     }
+
+    @Test
+    void jsonbArrow_withInvalidKeyCharacters_shouldThrowException() {
+        JsonbArrowOperatorHandler handler = new JsonbArrowOperatorHandler();
+
+        assertThatThrownBy(() -> handler.handle(dialect, column, dbWhere, "key with spaces::value", String.class, paramMap))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("JSONB key must be alphanumeric");
+    }
+
+    @Test
+    void jsonContainInArray_withInvalidValueCharacters_shouldThrowException() {
+        JsonContainInArrayOperatorHandler handler = new JsonContainInArrayOperatorHandler();
+
+        assertThatThrownBy(() -> handler.handle(dialect, column, dbWhere, "invalid value!", String.class, paramMap))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("JSONB ?? value contains invalid characters");
+    }
 }

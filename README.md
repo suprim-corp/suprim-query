@@ -2,6 +2,7 @@
 
 [![Java](https://img.shields.io/badge/Java-21+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.9+-blue.svg)](https://maven.apache.org/)
+[![](https://jitpack.io/v/dev.suprim/suprim-query.svg)](https://jitpack.io/#dev.suprim/suprim-query)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Multi-module Java library for database query operations with RSQL filtering, JTE SQL templating, and Spring Boot
@@ -9,13 +10,13 @@ auto-configuration.
 
 ## Modules
 
-| Module                   | Description                                           |
-|--------------------------|-------------------------------------------------------|
-| `db-core`                | Core models, dialect interface, exceptions, utilities |
-| `db-rsql`                | RSQL parser integration for dynamic SQL filtering     |
-| `db-jdbc`                | Spring JDBC operations with JTE templating            |
-| `db-postgresql`          | PostgreSQL dialect and metadata extraction            |
-| `db-spring-boot-starter` | Spring Boot auto-configuration                        |
+| Module                | Description                                           |
+|-----------------------|-------------------------------------------------------|
+| `core`                | Core models, dialect interface, exceptions, utilities |
+| `rsql`                | RSQL parser integration for dynamic SQL filtering     |
+| `jdbc`                | Spring JDBC operations with JTE templating            |
+| `postgresql`          | PostgreSQL dialect and metadata extraction            |
+| `spring-boot-starter` | Spring Boot auto-configuration                        |
 
 ## Requirements
 
@@ -25,14 +26,21 @@ auto-configuration.
 
 ## Installation
 
-Add to your `pom.xml`:
+Add the JitPack repository and dependency to your `pom.xml`:
 
 ```xml
 
+<repositories>
+	<repository>
+		<id>jitpack.io</id>
+		<url>https://jitpack.io</url>
+	</repository>
+</repositories>
+
 <dependency>
-	<groupId>dev.suprim</groupId>
-	<artifactId>db-spring-boot-starter</artifactId>
-	<version>1.0.0-SNAPSHOT</version>
+<groupId>dev.suprim</groupId>
+<artifactId>spring-boot-starter</artifactId>
+<version>1.0.0</version>
 </dependency>
 ```
 

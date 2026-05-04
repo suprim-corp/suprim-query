@@ -49,31 +49,29 @@ public class CrossTableColumnResolver {
         // Check if the column selector contains a table prefix (e.g., "tops.color")
         if (columnSelector.contains(".")) {
             String[] parts = columnSelector.split("\\.", 2);
-            if (parts.length == 2) {
-                String tablePrefix = parts[0];
-                String columnName = parts[1];
+            String tablePrefix = parts[0];
+            String columnName = parts[1];
 
+            log.debug(
+                    "Column selector has table prefix: {} for column: {}",
+                    tablePrefix,
+                    columnName
+            );
+
+            // Find the table that matches the prefix
+            DbTable targetTable = findTableByPrefix(tablePrefix, allTables);
+            if (nonNull(targetTable)) {
                 log.debug(
-                        "Column selector has table prefix: {} for column: {}",
-                        tablePrefix,
-                        columnName
+                        "Found target table: {} for prefix: {}",
+                        targetTable.name(),
+                        tablePrefix
                 );
-
-                // Find the table that matches the prefix
-                DbTable targetTable = findTableByPrefix(tablePrefix, allTables);
-                if (nonNull(targetTable)) {
-                    log.debug(
-                            "Found target table: {} for prefix: {}",
-                            targetTable.name(),
-                            tablePrefix
-                    );
-                    return targetTable.buildColumn(columnName);
-                } else {
-                    log.warn(
-                            "No table found for prefix: {}, falling back to default table",
-                            tablePrefix
-                    );
-                }
+                return targetTable.buildColumn(columnName);
+            } else {
+                log.warn(
+                        "No table found for prefix: {}, falling back to default table",
+                        tablePrefix
+                );
             }
         }
 

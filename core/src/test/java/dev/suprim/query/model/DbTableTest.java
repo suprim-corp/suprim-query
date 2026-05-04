@@ -120,6 +120,24 @@ class DbTableTest {
     }
 
     @Test
+    void buildColumn_withNullColumnName_shouldThrowDbException() {
+        DbTable table = createTable();
+
+        assertThatThrownBy(() -> table.buildColumn(null))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("Column name must not be null or blank");
+    }
+
+    @Test
+    void buildColumn_withBlankColumnName_shouldThrowDbException() {
+        DbTable table = createTable();
+
+        assertThatThrownBy(() -> table.buildColumn("   "))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("Column name must not be null or blank");
+    }
+
+    @Test
     void buildColumn_withNonExistentColumn_shouldThrowDbException() {
         DbTable table = createTable();
 

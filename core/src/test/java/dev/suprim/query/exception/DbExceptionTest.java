@@ -83,4 +83,14 @@ class DbExceptionTest {
         assertThat(DbErrorCode.valueOf("SUCCESS")).isEqualTo(DbErrorCode.SUCCESS);
         assertThat(DbErrorCode.valueOf("NOT_FOUND")).isEqualTo(DbErrorCode.NOT_FOUND);
     }
+
+    @Test
+    void dbRuntimeException_shouldWrapDbExceptionAndExposeCode() {
+        DbException cause = new DbException(DbErrorCode.INVALID_REQUEST, "bad filter");
+        DbRuntimeException ex = new DbRuntimeException(cause);
+
+        assertThat(ex.getCode()).isEqualTo(400);
+        assertThat(ex.getMessage()).isEqualTo("bad filter");
+        assertThat(ex.getCause()).isEqualTo(cause);
+    }
 }

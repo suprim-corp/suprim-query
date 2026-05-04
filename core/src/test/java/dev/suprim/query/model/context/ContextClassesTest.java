@@ -80,6 +80,17 @@ class ContextClassesTest {
     }
 
     @Test
+    void readContext_addColumns_shouldInitializeIfNull() {
+        DbColumn col1 = createTestColumn("col1");
+        ReadContext ctx = ReadContext.builder().build();
+        assertThat(ctx.getCols()).isNull();
+
+        ctx.addColumns(List.of(col1));
+
+        assertThat(ctx.getCols()).hasSize(1).contains(col1);
+    }
+
+    @Test
     void readContext_addJoin_shouldInitializeAndAdd() {
         ReadContext ctx = ReadContext.builder().build();
         DbJoin join = new DbJoin();

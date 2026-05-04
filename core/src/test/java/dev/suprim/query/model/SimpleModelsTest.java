@@ -2,6 +2,7 @@ package dev.suprim.query.model;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -136,5 +137,42 @@ class SimpleModelsTest {
     void databaseType_values_shouldContainAllTypes() {
         DatabaseType[] types = DatabaseType.values();
         assertThat(types).hasSize(7);
+    }
+
+    @Test
+    void databaseType_fromString_withNull_shouldReturnEmpty() {
+        assertThat(DatabaseType.fromString(null)).isEmpty();
+    }
+
+    @Test
+    void databaseType_fromString_withEnumName_shouldMatch() {
+        assertThat(DatabaseType.fromString("POSTGRESQL")).contains(DatabaseType.POSTGRESQL);
+        assertThat(DatabaseType.fromString("postgresql")).contains(DatabaseType.POSTGRESQL);
+    }
+
+    @Test
+    void databaseType_fromString_withDisplayName_shouldMatch() {
+        assertThat(DatabaseType.fromString("PostgreSQL")).contains(DatabaseType.POSTGRESQL);
+        assertThat(DatabaseType.fromString("Oracle")).contains(DatabaseType.ORACLE);
+        assertThat(DatabaseType.fromString("Microsoft SQL Server")).contains(DatabaseType.MSSQL);
+        assertThat(DatabaseType.fromString("MySQL")).contains(DatabaseType.MYSQL);
+        assertThat(DatabaseType.fromString("MariaDB")).contains(DatabaseType.MARIADB);
+        assertThat(DatabaseType.fromString("SQLite")).contains(DatabaseType.SQLITE);
+        assertThat(DatabaseType.fromString("DB2/UDB")).contains(DatabaseType.DB2);
+    }
+
+    @Test
+    void databaseType_fromString_withUnknown_shouldReturnEmpty() {
+        assertThat(DatabaseType.fromString("UnknownDB")).isEmpty();
+    }
+
+    @Test
+    void dbWhere_addParam_shouldAddToParamMap() {
+        Map<String, Object> params = new HashMap<>();
+        DbWhere where = new DbWhere("users", null, List.of(), params, "select", List.of());
+
+        where.addParam("name", "John");
+
+        assertThat(params).containsEntry("name", "John");
     }
 }

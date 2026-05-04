@@ -3,6 +3,7 @@
 [![Java](https://img.shields.io/badge/Java-21+-orange.svg)](https://openjdk.org/)
 [![Maven](https://img.shields.io/badge/Maven-3.9+-blue.svg)](https://maven.apache.org/)
 [![](https://jitpack.io/v/dev.suprim/suprim-query.svg)](https://jitpack.io/#dev.suprim/suprim-query)
+[![codecov](https://codecov.io/gh/suprim-corp/suprim-query/branch/main/graph/badge.svg)](https://codecov.io/gh/suprim-corp/suprim-query)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Multi-module Java library for database query operations with RSQL filtering, JTE SQL templating, and Spring Boot

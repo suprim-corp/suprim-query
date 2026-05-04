@@ -5,6 +5,7 @@ import dev.suprim.query.rsql.operators.CustomRSQLOperators;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -313,8 +314,34 @@ public class FilterBuilder {
 
 	private static String mapToJson(Map<String, Object> map) {
 		String entries = map.entrySet().stream()
-				.map(e -> "\"" + e.getKey() + "\":\"" + e.getValue() + "\"")
+				.map(e -> "\"" + escapeJson(e.getKey()) + "\":" + toJsonValue(e.getValue()))
 				.collect(Collectors.joining(","));
 		return "{" + entries + "}";
+	}
+
+	private static String toJsonValue(Object value) {
+		if (value == null) {
+			return "null";
+		}
+		if (value instanceof Boolean || value instanceof Number) {
+			return value.toString();
+		}
+		if (value instanceof Map<?, ?> nested) {
+			Map<String, Object> typed = new LinkedHashMap<>();
+			nested.forEach((k, v) -> typed.put(String.valueOf(k), v));
+			return mapToJson(typed);
+		}
+		if (value instanceof Iterable<?> iterable) {
+			List<String> elements = new ArrayList<>();
+			for (Object item : iterable) {
+				elements.add(toJsonValue(item));
+			}
+			return "[" + String.join(",", elements) + "]";
+		}
+		return "\"" + escapeJson(value.toString()) + "\"";
+	}
+
+	private static String escapeJson(String raw) {
+		return raw.replace("\\", "\\\\").replace("\"", "\\\"");
 	}
 }

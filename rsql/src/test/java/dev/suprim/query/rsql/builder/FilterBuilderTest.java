@@ -237,7 +237,65 @@ class FilterBuilderTest {
 			map.put("tier", "premium");
 			map.put("active", true);
 			String result = FilterBuilder.and().jsonbContains("metadata", map).build();
-			assertThat(result).isEqualTo("metadata=jsonbContain='{\"tier\":\"premium\",\"active\":\"true\"}'");
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"tier\":\"premium\",\"active\":true}'");
+		}
+
+		@Test
+		void jsonbContains_map_nestedMap_shouldSerializeRecursively() {
+			Map<String, Object> nested = new LinkedHashMap<>();
+			nested.put("city", "HCM");
+			nested.put("zip", "70000");
+			Map<String, Object> map = new LinkedHashMap<>();
+			map.put("address", nested);
+			String result = FilterBuilder.and().jsonbContains("metadata", map).build();
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"address\":{\"city\":\"HCM\",\"zip\":\"70000\"}}'");
+		}
+
+		@Test
+		void jsonbContains_map_withList_shouldSerializeAsArray() {
+			Map<String, Object> map = new LinkedHashMap<>();
+			map.put("tags", List.of("java", "spring"));
+			String result = FilterBuilder.and().jsonbContains("metadata", map).build();
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"tags\":[\"java\",\"spring\"]}'");
+		}
+
+		@Test
+		void jsonbContains_map_withNumber_shouldNotQuote() {
+			Map<String, Object> map = new LinkedHashMap<>();
+			map.put("count", 42);
+			map.put("rate", 3.14);
+			String result = FilterBuilder.and().jsonbContains("metadata", map).build();
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"count\":42,\"rate\":3.14}'");
+		}
+
+		@Test
+		void jsonbContains_map_withNull_shouldSerializeAsNull() {
+			Map<String, Object> map = new LinkedHashMap<>();
+			map.put("deleted_at", null);
+			String result = FilterBuilder.and().jsonbContains("metadata", map).build();
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"deleted_at\":null}'");
+		}
+
+		@Test
+		void jsonbContains_map_withSpecialChars_shouldEscape() {
+			Map<String, Object> map = new LinkedHashMap<>();
+			map.put("note", "he said \"hello\"");
+			String result = FilterBuilder.and().jsonbContains("metadata", map).build();
+			assertThat(result).isEqualTo("metadata=jsonbContain='{\"note\":\"he said \\\"hello\\\"\"}'");
+		}
+
+		@Test
+		void jsonbContains_map_deeplyNested_shouldSerializeAllLevels() {
+			Map<String, Object> level2 = new LinkedHashMap<>();
+			level2.put("enabled", true);
+			level2.put("threshold", 100);
+			Map<String, Object> level1 = new LinkedHashMap<>();
+			level1.put("config", level2);
+			level1.put("items", List.of(1, 2, 3));
+			Map<String, Object> root = new LinkedHashMap<>();
+			root.put("settings", level1);
+			String result = FilterBuilder.and().jsonbContains("data", root).build();
+			assertThat(result).isEqualTo("data=jsonbContain='{\"settings\":{\"config\":{\"enabled\":true,\"threshold\":100},\"items\":[1,2,3]}}'");
 		}
 
 		@Test

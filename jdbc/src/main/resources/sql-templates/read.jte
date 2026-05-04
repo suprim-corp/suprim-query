@@ -1,0 +1,32 @@
+@import java.util.List
+@import dev.suprim.query.model.DbJoin
+
+@param List<DbJoin> joins
+@param String rootTable
+@param String columns
+@param String rootWhere
+@param String sorts
+@param Integer limit
+@param Long offset
+
+SELECT
+    ${columns}
+FROM
+    ${rootTable}
+@if(joins != null)
+    @for(DbJoin join : joins)
+        ${join.render()}
+    @endfor
+@endif
+@if(rootWhere != null)
+    WHERE ${rootWhere}
+@endif
+@if(sorts != null)
+    ORDER BY ${sorts}
+@endif
+@if(limit != null)
+    LIMIT ${limit}
+    @if(offset != null)
+        OFFSET ${offset}
+    @endif
+@endif

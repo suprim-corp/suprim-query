@@ -559,6 +559,11 @@ class ExecutorTest {
         void findPage_returnsPageWithMetadata() throws DbException {
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
             when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 10 OFFSET 0");
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
             when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
@@ -585,6 +590,11 @@ class ExecutorTest {
         void findPage_lastPage_hasNextFalse() throws DbException {
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
             when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 10 OFFSET 20");
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
             when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
@@ -609,6 +619,11 @@ class ExecutorTest {
         void findPage_emptyResult_returnsEmptyPage() throws DbException {
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
             when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 10 OFFSET 0");
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
             when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
@@ -646,6 +661,11 @@ class ExecutorTest {
         void findPage_zeroLimit_usesDefaultFetchLimit() throws DbException {
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
             when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
             when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
@@ -670,6 +690,11 @@ class ExecutorTest {
         void findPage_negativeLimit_usesDefaultFetchLimit() throws DbException {
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
             when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
             when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
@@ -696,6 +721,11 @@ class ExecutorTest {
 
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
             when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
             when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
@@ -719,6 +749,11 @@ class ExecutorTest {
         void findPage_dataIsDefensivelyCopied() throws DbException {
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
             when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
 
@@ -738,6 +773,46 @@ class ExecutorTest {
 
             assertThatThrownBy(() -> result.data().add(Map.of("id", 2L)))
                     .isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        void findPage_transactionReturnsNull_throwsDbException() throws DbException {
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(transactionTemplate.execute(any())).thenReturn(null);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(0);
+            context.setParamMap(new HashMap<>());
+
+            assertThatThrownBy(() -> readService.findPage(context))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("Transaction returned null");
+        }
+
+        @Test
+        void findPage_dbExceptionInsideTransaction_wrapsInDbRuntimeException() throws DbException {
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenThrow(new DbException(DbErrorCode.NOT_FOUND, "DB not found."));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(0);
+            context.setParamMap(new HashMap<>());
+
+            assertThatThrownBy(() -> readService.findPage(context))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
         }
     }
 

@@ -2,6 +2,7 @@ package dev.suprim.query.jdbc.executor.read;
 
 import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
+import dev.suprim.query.exception.DbRuntimeException;
 import dev.suprim.query.jdbc.operation.DbOperationService;
 import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
@@ -116,38 +117,49 @@ public record JdbcReadService(
                 ? readContext.getDefaultFetchLimit()
                 : requestedLimit;
 
-        // Query data
         String querySql = sqlCreatorTemplate.query(readContext);
-        log.debug("findPage query SQL: {}", querySql);
-
-        List<Map<String, Object>> data = dbOperationService.read(
-                jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
-                readContext.getParamMap(),
-                querySql,
-                jdbcManager.getDialect(readContext.getDbId())
-        );
-
-        // Count total (reuses already-processed context — no second processor pass)
         String countSql = sqlCreatorTemplate.count(readContext);
+
+        log.debug("findPage query SQL: {}", querySql);
         log.debug("findPage count SQL: {}", countSql);
 
-        long total = dbOperationService
-                .count(
+        // Wrap data + count in a single transaction for consistency
+        Page page = jdbcManager.getTxnTemplate(readContext.getDbId()).execute(status -> {
+            try {
+                List<Map<String, Object>> data = dbOperationService.read(
                         jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
                         readContext.getParamMap(),
-                        countSql
-                )
-                .count();
+                        querySql,
+                        jdbcManager.getDialect(readContext.getDbId())
+                );
 
-        long offset = readContext.getOffset();
-        boolean hasNext = (offset + data.size()) < total;
+                long total = dbOperationService
+                        .count(
+                                jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
+                                readContext.getParamMap(),
+                                countSql
+                        )
+                        .count();
 
-        return Page.builder()
-                   .data(List.copyOf(data))
-                   .total(total)
-                   .limit(effectiveLimit)
-                   .offset(offset)
-                   .hasNext(hasNext)
-                   .build();
+                long offset = readContext.getOffset();
+                boolean hasNext = (offset + data.size()) < total;
+
+                return Page.builder()
+                           .data(List.copyOf(data))
+                           .total(total)
+                           .limit(effectiveLimit)
+                           .offset(offset)
+                           .hasNext(hasNext)
+                           .build();
+            } catch (DbException e) {
+                throw new DbRuntimeException(e);
+            }
+        });
+
+        if (page == null) {
+            throw new DbException(DbErrorCode.SERVER_ERROR, "Transaction returned null");
+        }
+
+        return page;
     }
 }

@@ -198,6 +198,22 @@ int bulkUpdated = updateService.patch(
 );
 ```
 
+#### Bulk update (single transaction)
+
+```java
+import dev.suprim.query.model.dto.BulkUpdate;
+
+// Each BulkUpdate has its own data and filter — all execute in one transaction
+List<BulkUpdate> updates = List.of(
+		new BulkUpdate(Map.of("status", "shipped"), "id==101"),
+		new BulkUpdate(Map.of("status", "cancelled"), "id==102"),
+		new BulkUpdate(Map.of("status", "refunded", "refunded_at", "2026-05-05"), "id==103")
+);
+
+int totalUpdated = updateService.patchBulk("main", "public", "orders", updates);
+// If any single update fails, all changes are rolled back
+```
+
 ### Deleting records
 
 ```java
@@ -210,6 +226,20 @@ int rowsDeleted = deleteService.delete(
 		"main", "public", "sessions",
 		"expired_at=lt=2026-01-01"
 );
+```
+
+#### Bulk delete (single transaction)
+
+```java
+// Multiple filters — each scopes a separate DELETE, all in one transaction
+List<String> filters = List.of(
+		"status==expired;created_at=lt=2025-01-01",
+		"status==cancelled;updated_at=lt=2025-06-01",
+		"id==999"
+);
+
+int totalDeleted = deleteService.deleteBulk("main", "public", "sessions", filters);
+// If any single delete fails, all changes are rolled back
 ```
 
 ### Building RSQL filters programmatically

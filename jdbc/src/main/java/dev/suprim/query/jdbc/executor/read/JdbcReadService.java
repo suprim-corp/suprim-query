@@ -7,6 +7,7 @@ import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
 import dev.suprim.query.jdbc.processor.ReadProcessor;
 import dev.suprim.query.model.context.ReadContext;
+import dev.suprim.query.model.dto.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -100,5 +101,23 @@ public record JdbcReadService(
             log.error("Error in read op : ", e);
             throw new DbException(DbErrorCode.SERVER_ERROR);
         }
+    }
+
+    @Override
+    public Page findPage(ReadContext readContext) throws DbException {
+        List<Map<String, Object>> data = findAll(readContext);
+        long total = count(readContext);
+
+        int limit = readContext.getLimit();
+        long offset = readContext.getOffset();
+        boolean hasNext = (offset + data.size()) < total;
+
+        return Page.builder()
+                   .data(data)
+                   .total(total)
+                   .limit(limit)
+                   .offset(offset)
+                   .hasNext(hasNext)
+                   .build();
     }
 }

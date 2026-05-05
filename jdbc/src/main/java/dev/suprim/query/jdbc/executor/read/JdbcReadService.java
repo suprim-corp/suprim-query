@@ -105,17 +105,47 @@ public record JdbcReadService(
 
     @Override
     public Page findPage(ReadContext readContext) throws DbException {
-        List<Map<String, Object>> data = findAll(readContext);
-        long total = count(readContext);
+        // Run processors once — they mutate the context (paramMap, cols, rootWhere, etc.)
+        for (ReadProcessor processor : processorList) {
+            processor.process(readContext);
+        }
 
-        int limit = readContext.getLimit();
+        // Resolve effective limit: 0 or -1 means "use defaultFetchLimit"
+        int requestedLimit = readContext.getLimit();
+        int effectiveLimit = (requestedLimit <= 0)
+                ? readContext.getDefaultFetchLimit()
+                : requestedLimit;
+
+        // Query data
+        String querySql = sqlCreatorTemplate.query(readContext);
+        log.debug("findPage query SQL: {}", querySql);
+
+        List<Map<String, Object>> data = dbOperationService.read(
+                jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
+                readContext.getParamMap(),
+                querySql,
+                jdbcManager.getDialect(readContext.getDbId())
+        );
+
+        // Count total (reuses already-processed context — no second processor pass)
+        String countSql = sqlCreatorTemplate.count(readContext);
+        log.debug("findPage count SQL: {}", countSql);
+
+        long total = dbOperationService
+                .count(
+                        jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
+                        readContext.getParamMap(),
+                        countSql
+                )
+                .count();
+
         long offset = readContext.getOffset();
         boolean hasNext = (offset + data.size()) < total;
 
         return Page.builder()
-                   .data(data)
+                   .data(List.copyOf(data))
                    .total(total)
-                   .limit(limit)
+                   .limit(effectiveLimit)
                    .offset(offset)
                    .hasNext(hasNext)
                    .build();

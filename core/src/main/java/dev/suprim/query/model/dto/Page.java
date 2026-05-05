@@ -4,6 +4,7 @@ import lombok.Builder;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Pagination wrapper for query results.
@@ -21,4 +22,10 @@ public record Page(
         int limit,
         long offset,
         boolean hasNext
-) {}
+) {
+    public Page {
+        data = Optional.ofNullable(data)
+                .map(List::copyOf)
+                .orElseGet(List::of);
+    }
+}

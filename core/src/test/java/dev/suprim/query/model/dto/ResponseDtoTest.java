@@ -131,4 +131,32 @@ class ResponseDtoTest {
         assertThat(page.total()).isZero();
         assertThat(page.hasNext()).isFalse();
     }
+
+    @Test
+    void page_nullData_shouldDefaultToEmptyList() {
+        Page page = Page.builder()
+                .data(null)
+                .total(0L)
+                .limit(10)
+                .offset(0L)
+                .hasNext(false)
+                .build();
+
+        assertThat(page.data()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void page_dataIsUnmodifiable() {
+        List<Map<String, Object>> mutableData = new java.util.ArrayList<>(List.of(Map.of("id", 1L)));
+        Page page = Page.builder()
+                .data(mutableData)
+                .total(1L)
+                .limit(10)
+                .offset(0L)
+                .hasNext(false)
+                .build();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> page.data().add(Map.of("id", 2L)))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

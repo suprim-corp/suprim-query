@@ -2,6 +2,7 @@ package dev.suprim.query.jdbc.executor.read;
 
 import dev.suprim.query.exception.DbException;
 import dev.suprim.query.model.context.ReadContext;
+import dev.suprim.query.model.dto.Page;
 
 import java.util.List;
 import java.util.Map;
@@ -12,4 +13,6 @@ public interface ReadService {
     Map<String, Object> findOne(ReadContext readContext) throws DbException;
 
     long count(ReadContext readContext) throws DbException;
+
+    Page findPage(ReadContext readContext) throws DbException;
 }

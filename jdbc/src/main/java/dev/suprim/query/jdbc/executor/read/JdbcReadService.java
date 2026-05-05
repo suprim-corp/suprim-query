@@ -7,6 +7,7 @@ import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
 import dev.suprim.query.jdbc.processor.ReadProcessor;
 import dev.suprim.query.model.context.ReadContext;
+import dev.suprim.query.model.dto.Page;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -100,5 +101,53 @@ public record JdbcReadService(
             log.error("Error in read op : ", e);
             throw new DbException(DbErrorCode.SERVER_ERROR);
         }
+    }
+
+    @Override
+    public Page findPage(ReadContext readContext) throws DbException {
+        // Run processors once — they mutate the context (paramMap, cols, rootWhere, etc.)
+        for (ReadProcessor processor : processorList) {
+            processor.process(readContext);
+        }
+
+        // Resolve effective limit: 0 or -1 means "use defaultFetchLimit"
+        int requestedLimit = readContext.getLimit();
+        int effectiveLimit = (requestedLimit <= 0)
+                ? readContext.getDefaultFetchLimit()
+                : requestedLimit;
+
+        // Query data
+        String querySql = sqlCreatorTemplate.query(readContext);
+        log.debug("findPage query SQL: {}", querySql);
+
+        List<Map<String, Object>> data = dbOperationService.read(
+                jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
+                readContext.getParamMap(),
+                querySql,
+                jdbcManager.getDialect(readContext.getDbId())
+        );
+
+        // Count total (reuses already-processed context — no second processor pass)
+        String countSql = sqlCreatorTemplate.count(readContext);
+        log.debug("findPage count SQL: {}", countSql);
+
+        long total = dbOperationService
+                .count(
+                        jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
+                        readContext.getParamMap(),
+                        countSql
+                )
+                .count();
+
+        long offset = readContext.getOffset();
+        boolean hasNext = (offset + data.size()) < total;
+
+        return Page.builder()
+                   .data(List.copyOf(data))
+                   .total(total)
+                   .limit(effectiveLimit)
+                   .offset(offset)
+                   .hasNext(hasNext)
+                   .build();
     }
 }

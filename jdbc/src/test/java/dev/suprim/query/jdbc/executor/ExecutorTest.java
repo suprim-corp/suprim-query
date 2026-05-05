@@ -17,6 +17,7 @@ import dev.suprim.query.model.DbTable;
 import dev.suprim.query.model.context.ReadContext;
 import dev.suprim.query.model.dto.CountResponse;
 import dev.suprim.query.model.dto.CreationResponse;
+import dev.suprim.query.model.dto.Page;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -552,6 +553,191 @@ class ExecutorTest {
             serviceWithProcessors.findAll(context);
 
             verify(processor).process(context);
+        }
+
+        @Test
+        void findPage_returnsPageWithMetadata() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 10 OFFSET 0");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of(Map.of("id", 1L), Map.of("id", 2L)));
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(25));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(0);
+            context.setParamMap(new HashMap<>());
+
+            Page result = readService.findPage(context);
+
+            assertThat(result.data()).hasSize(2);
+            assertThat(result.total()).isEqualTo(25);
+            assertThat(result.limit()).isEqualTo(10);
+            assertThat(result.offset()).isZero();
+            assertThat(result.hasNext()).isTrue();
+        }
+
+        @Test
+        void findPage_lastPage_hasNextFalse() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 10 OFFSET 20");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of(Map.of("id", 21L), Map.of("id", 22L)));
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(22));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(20);
+            context.setParamMap(new HashMap<>());
+
+            Page result = readService.findPage(context);
+
+            assertThat(result.data()).hasSize(2);
+            assertThat(result.total()).isEqualTo(22);
+            assertThat(result.hasNext()).isFalse();
+        }
+
+        @Test
+        void findPage_emptyResult_returnsEmptyPage() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 10 OFFSET 0");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of());
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(0));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(0);
+            context.setParamMap(new HashMap<>());
+
+            Page result = readService.findPage(context);
+
+            assertThat(result.data()).isEmpty();
+            assertThat(result.total()).isZero();
+            assertThat(result.hasNext()).isFalse();
+        }
+
+        @Test
+        void findPage_dbException_propagates() throws DbException {
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenThrow(new DbException(DbErrorCode.SERVER_ERROR));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(0);
+
+            assertThatThrownBy(() -> readService.findPage(context))
+                    .isInstanceOf(DbException.class);
+        }
+
+        @Test
+        void findPage_zeroLimit_usesDefaultFetchLimit() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of(Map.of("id", 1L)));
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(5));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(0);
+            context.setOffset(0);
+            context.setDefaultFetchLimit(50);
+            context.setParamMap(new HashMap<>());
+
+            Page result = readService.findPage(context);
+
+            assertThat(result.limit()).isEqualTo(50);
+            assertThat(result.hasNext()).isTrue();
+        }
+
+        @Test
+        void findPage_negativeLimit_usesDefaultFetchLimit() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of(Map.of("id", 1L)));
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(100));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(-1);
+            context.setOffset(0);
+            context.setDefaultFetchLimit(25);
+            context.setParamMap(new HashMap<>());
+
+            Page result = readService.findPage(context);
+
+            assertThat(result.limit()).isEqualTo(25);
+        }
+
+        @Test
+        void findPage_processorsCalledOnce() throws DbException {
+            ReadProcessor processor = mock(ReadProcessor.class);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(List.of());
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(0));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(0);
+            context.setParamMap(new HashMap<>());
+
+            serviceWithProcessors.findPage(context);
+
+            // Processors should be called exactly once, not twice
+            verify(processor, times(1)).process(context);
+        }
+
+        @Test
+        void findPage_dataIsDefensivelyCopied() throws DbException {
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(sqlCreatorTemplate.query(any(ReadContext.class))).thenReturn("SELECT * FROM users");
+            when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
+
+            List<Map<String, Object>> mutableList = new java.util.ArrayList<>(List.of(Map.of("id", 1L)));
+            when(dbOperationService.read(eq(namedParameterJdbcTemplate), any(), anyString(), eq(dialect)))
+                    .thenReturn(mutableList);
+            when(dbOperationService.count(eq(namedParameterJdbcTemplate), any(), anyString()))
+                    .thenReturn(new CountResponse(1));
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setLimit(10);
+            context.setOffset(0);
+            context.setParamMap(new HashMap<>());
+
+            Page result = readService.findPage(context);
+
+            assertThatThrownBy(() -> result.data().add(Map.of("id", 2L)))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
     }
 

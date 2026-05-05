@@ -84,4 +84,79 @@ class ResponseDtoTest {
         DeleteResponse response = DeleteResponse.builder().rows(0).build();
         assertThat(response.rows()).isZero();
     }
+
+    @Test
+    void page_shouldHoldAllFields() {
+        List<Map<String, Object>> data = List.of(Map.of("id", 1L), Map.of("id", 2L));
+        Page page = Page.builder()
+                .data(data)
+                .total(10L)
+                .limit(2)
+                .offset(0L)
+                .hasNext(true)
+                .build();
+
+        assertThat(page.data()).hasSize(2);
+        assertThat(page.total()).isEqualTo(10L);
+        assertThat(page.limit()).isEqualTo(2);
+        assertThat(page.offset()).isZero();
+        assertThat(page.hasNext()).isTrue();
+    }
+
+    @Test
+    void page_lastPage_hasNextFalse() {
+        List<Map<String, Object>> data = List.of(Map.of("id", 9L), Map.of("id", 10L));
+        Page page = Page.builder()
+                .data(data)
+                .total(10L)
+                .limit(2)
+                .offset(8L)
+                .hasNext(false)
+                .build();
+
+        assertThat(page.hasNext()).isFalse();
+    }
+
+    @Test
+    void page_emptyData_shouldWork() {
+        Page page = Page.builder()
+                .data(List.of())
+                .total(0L)
+                .limit(10)
+                .offset(0L)
+                .hasNext(false)
+                .build();
+
+        assertThat(page.data()).isEmpty();
+        assertThat(page.total()).isZero();
+        assertThat(page.hasNext()).isFalse();
+    }
+
+    @Test
+    void page_nullData_shouldDefaultToEmptyList() {
+        Page page = Page.builder()
+                .data(null)
+                .total(0L)
+                .limit(10)
+                .offset(0L)
+                .hasNext(false)
+                .build();
+
+        assertThat(page.data()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void page_dataIsUnmodifiable() {
+        List<Map<String, Object>> mutableData = new java.util.ArrayList<>(List.of(Map.of("id", 1L)));
+        Page page = Page.builder()
+                .data(mutableData)
+                .total(1L)
+                .limit(10)
+                .offset(0L)
+                .hasNext(false)
+                .build();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> page.data().add(Map.of("id", 2L)))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

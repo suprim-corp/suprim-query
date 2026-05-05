@@ -112,6 +112,23 @@ ReadContext countContext = ReadContext.builder()
                                       .build();
 
 long pendingCount = readService.count(countContext);
+
+// Paginated query (single call, returns data + metadata)
+ReadContext pageContext = ReadContext.builder()
+                                     .dbId("main")
+                                     .tableName("users")
+                                     .fields("id,name,email")
+                                     .filter("status==active")
+                                     .limit(20)
+                                     .offset(40)
+                                     .build();
+
+Page page = readService.findPage(pageContext);
+// page.data()    → List<Map<String, Object>> (current page rows)
+// page.total()   → 150 (total matching rows)
+// page.limit()   → 20
+// page.offset()  → 40
+// page.hasNext() → true (40 + 20 < 150)
 ```
 
 ### Creating records

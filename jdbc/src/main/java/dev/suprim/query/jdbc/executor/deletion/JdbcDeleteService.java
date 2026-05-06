@@ -3,6 +3,7 @@ package dev.suprim.query.jdbc.executor.deletion;
 import cz.jirutka.rsql.parser.ast.Node;
 import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
+import dev.suprim.query.exception.DbRuntimeException;
 import dev.suprim.query.jdbc.operation.DbOperationService;
 import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Map;
 
 import static java.util.Objects.isNull;
@@ -50,6 +52,71 @@ public class JdbcDeleteService implements DeleteService {
         context.createParamMap();
 
         return executeDelete(dbId, filter, dbTable, context);
+    }
+
+    @Override
+    public int deleteBulk(
+            String dbId,
+            String schemaName,
+            String tableName,
+            List<String> filters
+    ) throws DbException {
+        if (isNull(filters) || filters.isEmpty()) {
+            throw new DbException(DbErrorCode.INVALID_REQUEST,
+                    "Bulk delete requires at least one filter.");
+        }
+
+        DbTable dbTable = jdbcManager.getTable(dbId, schemaName, tableName);
+
+        Integer totalDeleted = jdbcManager.getTxnTemplate(dbId).execute(status -> {
+            try {
+                int total = 0;
+                for (String filter : filters) {
+                    total += executeSingleDelete(dbId, dbTable, tableName, filter);
+                }
+                return total;
+            } catch (DbException e) {
+                status.setRollbackOnly();
+                throw new DbRuntimeException(e);
+            } catch (Exception e) {
+                status.setRollbackOnly();
+                throw new RuntimeException(e.getMessage(), e);
+            }
+        });
+
+        return isNull(totalDeleted) ? 0 : totalDeleted;
+    }
+
+    private int executeSingleDelete(
+            String dbId,
+            DbTable dbTable,
+            String tableName,
+            String filter
+    ) throws DbException {
+        if (isNull(filter) || filter.isBlank()) {
+            throw new DbException(DbErrorCode.INVALID_REQUEST,
+                    "Each bulk delete filter must be non-blank.");
+        }
+
+        DeleteContext context = DeleteContext.builder()
+                .dbId(dbId)
+                .tableName(tableName)
+                .table(dbTable)
+                .build();
+
+        context.createParamMap();
+
+        addWhere(filter, dbTable, context);
+        String sql = sqlCreatorTemplate.deleteQuery(context);
+
+        log.debug("Bulk delete SQL: {}", sql);
+        log.debug("Bulk delete params: {}", context.getParamMap());
+
+        return dbOperationService.delete(
+                jdbcManager.getNamedParameterJdbcTemplate(dbId),
+                context.getParamMap(),
+                sql
+        );
     }
 
     private int executeDelete(

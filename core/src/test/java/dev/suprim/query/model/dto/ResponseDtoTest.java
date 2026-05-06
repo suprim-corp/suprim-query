@@ -159,4 +159,21 @@ class ResponseDtoTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> page.data().add(Map.of("id", 2L)))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    @Test
+    void bulkUpdate_shouldHoldDataAndFilter() {
+        Map<String, Object> data = Map.of("status", "ACTIVE");
+        BulkUpdate bulkUpdate = new BulkUpdate(data, "id==1");
+
+        assertThat(bulkUpdate.data()).containsEntry("status", "ACTIVE");
+        assertThat(bulkUpdate.filter()).isEqualTo("id==1");
+    }
+
+    @Test
+    void bulkUpdate_nullDataAndFilter_shouldWork() {
+        BulkUpdate bulkUpdate = new BulkUpdate(null, null);
+
+        assertThat(bulkUpdate.data()).isNull();
+        assertThat(bulkUpdate.filter()).isNull();
+    }
 }

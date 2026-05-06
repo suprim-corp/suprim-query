@@ -15,6 +15,7 @@ import dev.suprim.query.jdbc.processor.TSIDProcessor;
 import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbTable;
 import dev.suprim.query.model.context.ReadContext;
+import dev.suprim.query.model.dto.BulkUpdate;
 import dev.suprim.query.model.dto.CountResponse;
 import dev.suprim.query.model.dto.CreationResponse;
 import dev.suprim.query.model.dto.Page;
@@ -945,6 +946,162 @@ class ExecutorTest {
 
             verify(mockStatus).setRollbackOnly();
         }
+
+        @Test
+        void patchBulk_multipleUpdates_returnsTotal() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(sqlCreatorTemplate.updateQuery(any())).thenReturn("UPDATE users SET name = :name WHERE id = :id");
+            when(dbOperationService.update(eq(namedParameterJdbcTemplate), anyMap(), anyString()))
+                    .thenReturn(2).thenReturn(3);
+
+            List<BulkUpdate> updates = List.of(
+                    new BulkUpdate(Map.of("name", "A"), "id==1"),
+                    new BulkUpdate(Map.of("name", "B"), "id==2")
+            );
+
+            int result = updateService.patchBulk("test", null, "users", updates);
+
+            assertThat(result).isEqualTo(5);
+        }
+
+        @Test
+        void patchBulk_nullUpdates_throwsDbException() {
+            assertThatThrownBy(() -> updateService.patchBulk("test", null, "users", null))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("at least one operation");
+        }
+
+        @Test
+        void patchBulk_emptyUpdates_throwsDbException() {
+            assertThatThrownBy(() -> updateService.patchBulk("test", null, "users", List.of()))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("at least one operation");
+        }
+
+        @Test
+        void patchBulk_nullFilter_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+
+            List<BulkUpdate> updates = List.of(
+                    new BulkUpdate(Map.of("name", "A"), null)
+            );
+
+            assertThatThrownBy(() -> updateService.patchBulk("test", null, "users", updates))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void patchBulk_blankFilter_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+
+            List<BulkUpdate> updates = List.of(
+                    new BulkUpdate(Map.of("name", "A"), "   ")
+            );
+
+            assertThatThrownBy(() -> updateService.patchBulk("test", null, "users", updates))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void patchBulk_nullData_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+
+            List<BulkUpdate> updates = List.of(
+                    new BulkUpdate(null, "id==1")
+            );
+
+            assertThatThrownBy(() -> updateService.patchBulk("test", null, "users", updates))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void patchBulk_emptyData_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+
+            List<BulkUpdate> updates = List.of(
+                    new BulkUpdate(Map.of(), "id==1")
+            );
+
+            assertThatThrownBy(() -> updateService.patchBulk("test", null, "users", updates))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void patchBulk_transactionReturnsNull_returnsZero() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenReturn(null);
+
+            List<BulkUpdate> updates = List.of(
+                    new BulkUpdate(Map.of("name", "A"), "id==1")
+            );
+
+            int result = updateService.patchBulk("test", null, "users", updates);
+
+            assertThat(result).isEqualTo(0);
+        }
+
+        @Test
+        void patchBulk_runtimeException_rollsBackAndThrows() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.updateQuery(any())).thenReturn("UPDATE users SET name = :name WHERE id = :id");
+
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+            when(dbOperationService.update(eq(namedParameterJdbcTemplate), anyMap(), anyString()))
+                    .thenThrow(new RuntimeException("Connection lost"));
+
+            List<BulkUpdate> updates = List.of(
+                    new BulkUpdate(Map.of("name", "A"), "id==1")
+            );
+
+            assertThatThrownBy(() -> updateService.patchBulk("test", null, "users", updates))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Connection lost");
+
+            verify(mockStatus).setRollbackOnly();
+        }
     }
 
     @Nested
@@ -1051,6 +1208,114 @@ class ExecutorTest {
 
             assertThatThrownBy(() -> deleteService.delete("test", null, "users", "id==1"))
                     .isInstanceOf(RuntimeException.class);
+
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void deleteBulk_multipleFilters_returnsTotal() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :id");
+            when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString()))
+                    .thenReturn(1).thenReturn(3);
+
+            List<String> filters = List.of("id==1", "id==2");
+
+            int result = deleteService.deleteBulk("test", null, "users", filters);
+
+            assertThat(result).isEqualTo(4);
+        }
+
+        @Test
+        void deleteBulk_nullFilters_throwsDbException() {
+            assertThatThrownBy(() -> deleteService.deleteBulk("test", null, "users", null))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("at least one filter");
+        }
+
+        @Test
+        void deleteBulk_emptyFilters_throwsDbException() {
+            assertThatThrownBy(() -> deleteService.deleteBulk("test", null, "users", List.of()))
+                    .isInstanceOf(DbException.class)
+                    .hasMessageContaining("at least one filter");
+        }
+
+        @Test
+        void deleteBulk_blankFilter_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+
+            List<String> filters = List.of("   ");
+
+            assertThatThrownBy(() -> deleteService.deleteBulk("test", null, "users", filters))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void deleteBulk_nullFilterEntry_throwsDbException() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+
+            List<String> filters = new ArrayList<>();
+            filters.add(null);
+
+            assertThatThrownBy(() -> deleteService.deleteBulk("test", null, "users", filters))
+                    .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void deleteBulk_transactionReturnsNull_returnsZero() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(transactionTemplate.execute(any())).thenReturn(null);
+
+            List<String> filters = List.of("id==1");
+
+            int result = deleteService.deleteBulk("test", null, "users", filters);
+
+            assertThat(result).isEqualTo(0);
+        }
+
+        @Test
+        void deleteBulk_runtimeException_rollsBackAndThrows() throws DbException {
+            when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :id");
+
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+            when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString()))
+                    .thenThrow(new RuntimeException("Connection lost"));
+
+            List<String> filters = List.of("id==1");
+
+            assertThatThrownBy(() -> deleteService.deleteBulk("test", null, "users", filters))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Connection lost");
 
             verify(mockStatus).setRollbackOnly();
         }

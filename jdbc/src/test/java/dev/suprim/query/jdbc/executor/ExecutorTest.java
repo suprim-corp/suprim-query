@@ -5,6 +5,7 @@ import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
 import dev.suprim.query.jdbc.executor.creation.JdbcCreationService;
 import dev.suprim.query.jdbc.executor.deletion.JdbcDeleteService;
+import dev.suprim.query.jdbc.executor.raw.JdbcRawQueryService;
 import dev.suprim.query.jdbc.executor.read.JdbcReadService;
 import dev.suprim.query.jdbc.executor.update.JdbcUpdateService;
 import dev.suprim.query.jdbc.operation.DbOperationService;
@@ -32,6 +33,7 @@ import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.*;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -1318,6 +1320,189 @@ class ExecutorTest {
                     .hasMessageContaining("Connection lost");
 
             verify(mockStatus).setRollbackOnly();
+        }
+    }
+
+    @Nested
+    @DisplayName("JdbcRawQueryService Tests")
+    class JdbcRawQueryServiceTests {
+
+        private JdbcRawQueryService rawQueryService;
+
+        @BeforeEach
+        void setup() {
+            rawQueryService = new JdbcRawQueryService(jdbcManager);
+        }
+
+        @Nested
+        @DisplayName("queryOne")
+        class QueryOneTests {
+
+            @Test
+            void queryOne_returnsRow() throws DbException {
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                Map<String, Object> expected = Map.of("id", 1L, "name", "Alice");
+                when(namedParameterJdbcTemplate.queryForMap(anyString(), anyMap())).thenReturn(expected);
+
+                Optional<Map<String, Object>> result = rawQueryService.queryOne(
+                        "test", "SELECT * FROM users WHERE id = :id", Map.of("id", 1L));
+
+                assertThat(result).isPresent().contains(expected);
+            }
+
+            @Test
+            void queryOne_noResult_returnsEmpty() throws DbException {
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(namedParameterJdbcTemplate.queryForMap(anyString(), anyMap()))
+                        .thenThrow(new EmptyResultDataAccessException(1));
+
+                Optional<Map<String, Object>> result = rawQueryService.queryOne(
+                        "test", "SELECT * FROM users WHERE id = :id", Map.of("id", 999L));
+
+                assertThat(result).isEmpty();
+            }
+
+            @Test
+            void queryOne_dataAccessException_throwsDbException() {
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(namedParameterJdbcTemplate.queryForMap(anyString(), anyMap()))
+                        .thenThrow(new DataAccessResourceFailureException("Connection refused"));
+
+                assertThatThrownBy(() -> rawQueryService.queryOne(
+                        "test", "SELECT 1", Map.of()))
+                        .isInstanceOf(DbException.class)
+                        .hasMessageContaining("Raw query failed");
+            }
+
+            @Test
+            void queryOne_dbNotFound_throwsDbException() {
+                when(jdbcManager.getNamedParameterJdbcTemplate("unknown")).thenReturn(null);
+
+                assertThatThrownBy(() -> rawQueryService.queryOne(
+                        "unknown", "SELECT 1", Map.of()))
+                        .isInstanceOf(DbException.class)
+                        .hasMessageContaining("DB not found");
+            }
+        }
+
+        @Nested
+        @DisplayName("queryList")
+        class QueryListTests {
+
+            @Test
+            void queryList_returnsRows() throws DbException {
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                List<Map<String, Object>> expected = List.of(
+                        Map.of("id", 1L, "name", "Alice"),
+                        Map.of("id", 2L, "name", "Bob")
+                );
+                when(namedParameterJdbcTemplate.queryForList(anyString(), anyMap())).thenReturn(expected);
+
+                List<Map<String, Object>> result = rawQueryService.queryList(
+                        "test", "SELECT * FROM users", Map.of());
+
+                assertThat(result).hasSize(2).isEqualTo(expected);
+            }
+
+            @Test
+            void queryList_noResults_returnsEmptyList() throws DbException {
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(namedParameterJdbcTemplate.queryForList(anyString(), anyMap())).thenReturn(List.of());
+
+                List<Map<String, Object>> result = rawQueryService.queryList(
+                        "test", "SELECT * FROM users WHERE 1=0", Map.of());
+
+                assertThat(result).isEmpty();
+            }
+
+            @Test
+            void queryList_dataAccessException_throwsDbException() {
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(namedParameterJdbcTemplate.queryForList(anyString(), anyMap()))
+                        .thenThrow(new DataAccessResourceFailureException("Timeout"));
+
+                assertThatThrownBy(() -> rawQueryService.queryList(
+                        "test", "SELECT 1", Map.of()))
+                        .isInstanceOf(DbException.class)
+                        .hasMessageContaining("Raw query failed");
+            }
+
+            @Test
+            void queryList_dbNotFound_throwsDbException() {
+                when(jdbcManager.getNamedParameterJdbcTemplate("unknown")).thenReturn(null);
+
+                assertThatThrownBy(() -> rawQueryService.queryList(
+                        "unknown", "SELECT 1", Map.of()))
+                        .isInstanceOf(DbException.class)
+                        .hasMessageContaining("DB not found");
+            }
+        }
+
+        @Nested
+        @DisplayName("execute")
+        class ExecuteTests {
+
+            @Test
+            void execute_returnsAffectedRows() throws DbException {
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                    TransactionCallback<?> callback = invocation.getArgument(0);
+                    return callback.doInTransaction(mock(TransactionStatus.class));
+                });
+                when(namedParameterJdbcTemplate.update(anyString(), anyMap())).thenReturn(3);
+
+                int result = rawQueryService.execute(
+                        "test", "UPDATE users SET name = :name WHERE id = :id",
+                        Map.of("name", "Charlie", "id", 1L));
+
+                assertThat(result).isEqualTo(3);
+            }
+
+            @Test
+            void execute_transactionReturnsNull_returnsZero() throws DbException {
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(transactionTemplate.execute(any())).thenReturn(null);
+
+                int result = rawQueryService.execute(
+                        "test", "DELETE FROM users WHERE id = :id", Map.of("id", 1L));
+
+                assertThat(result).isEqualTo(0);
+            }
+
+            @Test
+            void execute_dataAccessException_throwsDbException() {
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(transactionTemplate.execute(any())).thenThrow(new DataAccessResourceFailureException("Disk full"));
+
+                assertThatThrownBy(() -> rawQueryService.execute(
+                        "test", "INSERT INTO users (name) VALUES (:name)", Map.of("name", "X")))
+                        .isInstanceOf(DbException.class)
+                        .hasMessageContaining("Raw execute failed");
+            }
+
+            @Test
+            void execute_txnTemplateNotFound_throwsDbException() {
+                when(jdbcManager.getTxnTemplate("unknown")).thenReturn(null);
+
+                assertThatThrownBy(() -> rawQueryService.execute(
+                        "unknown", "DELETE FROM users", Map.of()))
+                        .isInstanceOf(DbException.class)
+                        .hasMessageContaining("Transaction template not found");
+            }
+
+            @Test
+            void execute_dbNotFound_throwsDbException() {
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(null);
+
+                assertThatThrownBy(() -> rawQueryService.execute(
+                        "test", "DELETE FROM users", Map.of()))
+                        .isInstanceOf(DbException.class)
+                        .hasMessageContaining("DB not found");
+            }
         }
     }
 }

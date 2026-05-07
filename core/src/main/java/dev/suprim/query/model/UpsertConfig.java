@@ -1,6 +1,7 @@
 package dev.suprim.query.model;
 
 import java.util.List;
+import java.util.Optional;
 
 import static java.util.Objects.isNull;
 
@@ -18,6 +19,8 @@ public record UpsertConfig(
         if (isNull(conflictColumns) || conflictColumns.isEmpty()) {
             throw new IllegalArgumentException("conflictColumns must not be null or empty");
         }
+        conflictColumns = List.copyOf(conflictColumns);
+        updateColumns = Optional.ofNullable(updateColumns).map(List::copyOf).orElse(null);
     }
 
     public boolean isDoNothing() {

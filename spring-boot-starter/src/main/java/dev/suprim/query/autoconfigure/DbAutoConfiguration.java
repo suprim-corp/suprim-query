@@ -9,6 +9,8 @@ import dev.suprim.query.jdbc.executor.creation.CreationService;
 import dev.suprim.query.jdbc.executor.creation.JdbcCreationService;
 import dev.suprim.query.jdbc.executor.deletion.DeleteService;
 import dev.suprim.query.jdbc.executor.deletion.JdbcDeleteService;
+import dev.suprim.query.jdbc.executor.raw.JdbcRawQueryService;
+import dev.suprim.query.jdbc.executor.raw.RawQueryService;
 import dev.suprim.query.jdbc.executor.read.JdbcReadService;
 import dev.suprim.query.jdbc.executor.read.ReadService;
 import dev.suprim.query.jdbc.executor.update.JdbcUpdateService;
@@ -213,5 +215,11 @@ public class DbAutoConfiguration {
             DbOperationService dbOperationService
     ) {
         return new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public RawQueryService rawQueryService(JdbcManager jdbcManager) {
+        return new JdbcRawQueryService(jdbcManager);
     }
 }

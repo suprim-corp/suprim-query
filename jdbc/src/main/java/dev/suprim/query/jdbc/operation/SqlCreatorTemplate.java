@@ -78,6 +78,19 @@ public record SqlCreatorTemplate(
         return this.renderSqlTemplate(dialect.getInsertSqlTemplate(), params);
     }
 
+    public String upsert(CreateContext createContext, String onConflictClause) throws DbException {
+        Map<String, Object> params = new HashMap<>();
+
+        params.put("table", createContext.table().fullName());
+        params.put("columns", createContext.renderColumns());
+        params.put("parameters", createContext.renderParams());
+        params.put("onConflict", onConflictClause);
+
+        Dialect dialect = jdbcManager.getDialect(createContext.dbId());
+
+        return this.renderSqlTemplate(dialect.getUpsertSqlTemplate(), params);
+    }
+
     public String findOne(ReadContext readContext) throws DbException {
         Map<String, Object> params = new HashMap<>();
         params.put("columns", projections(readContext.getCols()));

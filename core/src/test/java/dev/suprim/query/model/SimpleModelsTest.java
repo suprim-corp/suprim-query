@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SimpleModelsTest {
 
@@ -174,5 +175,52 @@ class SimpleModelsTest {
         where.addParam("name", "John");
 
         assertThat(params).containsEntry("name", "John");
+    }
+
+    // --- UpsertConfig tests ---
+
+    @Test
+    void upsertConfig_validConfig_shouldCreateRecord() {
+        UpsertConfig config = new UpsertConfig(List.of("email"), List.of("name", "age"));
+
+        assertThat(config.conflictColumns()).containsExactly("email");
+        assertThat(config.updateColumns()).containsExactly("name", "age");
+        assertThat(config.isDoNothing()).isFalse();
+    }
+
+    @Test
+    void upsertConfig_nullUpdateColumns_isDoNothingReturnsTrue() {
+        UpsertConfig config = new UpsertConfig(List.of("email"), null);
+
+        assertThat(config.isDoNothing()).isTrue();
+    }
+
+    @Test
+    void upsertConfig_emptyUpdateColumns_isDoNothingReturnsTrue() {
+        UpsertConfig config = new UpsertConfig(List.of("email"), List.of());
+
+        assertThat(config.isDoNothing()).isTrue();
+    }
+
+    @Test
+    void upsertConfig_nullConflictColumns_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new UpsertConfig(null, List.of("name")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("conflictColumns must not be null or empty");
+    }
+
+    @Test
+    void upsertConfig_emptyConflictColumns_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> new UpsertConfig(List.of(), List.of("name")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("conflictColumns must not be null or empty");
+    }
+
+    @Test
+    void upsertConfig_multipleConflictColumns_shouldCreateRecord() {
+        UpsertConfig config = new UpsertConfig(List.of("tenant_id", "email"), List.of("name"));
+
+        assertThat(config.conflictColumns()).containsExactly("tenant_id", "email");
+        assertThat(config.updateColumns()).containsExactly("name");
     }
 }

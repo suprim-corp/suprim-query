@@ -40,7 +40,7 @@ Add the JitPack repository and dependency to your `pom.xml`:
 <dependency>
 <groupId>dev.suprim</groupId>
 <artifactId>spring-boot-starter</artifactId>
-<version>1.0.0</version>
+<version>1.1.0</version>
 </dependency>
 ```
 
@@ -51,7 +51,7 @@ If you only need the RSQL builder (no JDBC/Spring dependency):
 <dependency>
 	<groupId>dev.suprim</groupId>
 	<artifactId>rsql</artifactId>
-	<version>1.0.0</version>
+	<version>1.1.0</version>
 </dependency>
 ```
 
@@ -240,6 +240,78 @@ List<String> filters = List.of(
 
 int totalDeleted = deleteService.deleteBulk("main", "public", "sessions", filters);
 // If any single delete fails, all changes are rolled back
+```
+
+### Upsert (INSERT ... ON CONFLICT)
+
+```java
+@Autowired
+private CreationService creationService;
+
+import dev.suprim.query.model.UpsertConfig;
+
+Map<String, Object> data = Map.of(
+		"email", "john@example.com",
+		"name", "John Doe",
+		"login_count", 1
+);
+
+// Upsert with DO UPDATE — update specific columns on conflict
+UpsertConfig config = new UpsertConfig(
+		List.of("email"),                    // conflict target columns
+		List.of("name", "login_count")       // columns to update on conflict
+);
+
+CreationResponse response = creationService.upsert(
+		"main", "public", "users",
+		null,   // columns (null = infer from data keys)
+		data,
+		config
+);
+
+// Upsert with DO NOTHING — skip insert if conflict
+UpsertConfig doNothing = new UpsertConfig(
+		List.of("email"),
+		List.of()   // empty = DO NOTHING
+);
+
+CreationResponse skipped = creationService.upsert(
+		"main", "public", "users",
+		null, data, doNothing
+);
+```
+
+### Raw SQL queries
+
+For cases where the query builder doesn't cover your needs, use `RawQueryService` as an escape hatch.
+Always use named parameters (`:paramName`) — never concatenate user input into SQL.
+
+```java
+@Autowired
+private RawQueryService rawQueryService;
+
+// Select single row
+Optional<Map<String, Object>> user = rawQueryService.queryOne(
+		"main",
+		"SELECT * FROM users WHERE id = :id",
+		Map.of("id", 123)
+);
+
+// Select multiple rows
+List<Map<String, Object>> rows = rawQueryService.queryList(
+		"main",
+		"SELECT u.name, COUNT(o.id) as order_count FROM users u " +
+		"LEFT JOIN orders o ON o.user_id = u.id " +
+		"WHERE u.status = :status GROUP BY u.name",
+		Map.of("status", "active")
+);
+
+// Execute write statement (INSERT/UPDATE/DELETE)
+int affected = rawQueryService.execute(
+		"main",
+		"UPDATE users SET last_login = NOW() WHERE id = :id",
+		Map.of("id", 456)
+);
 ```
 
 ### Building RSQL filters programmatically

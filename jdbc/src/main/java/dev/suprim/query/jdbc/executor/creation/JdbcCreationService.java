@@ -9,6 +9,7 @@ import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
 import dev.suprim.query.jdbc.processor.TSIDProcessor;
 import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbTable;
+import dev.suprim.query.model.UpsertConfig;
 import dev.suprim.query.model.context.CreateContext;
 import dev.suprim.query.model.context.InsertableColumn;
 import dev.suprim.query.model.dto.CreationResponse;
@@ -19,6 +20,7 @@ import org.springframework.dao.DataAccessException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
@@ -144,6 +146,70 @@ public class JdbcCreationService implements CreationService {
             }
 
             return createResponse;
+        } catch (DataAccessException | DbException e) {
+            log.error("ERROR -> {}", e.getMessage());
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
+    public CreationResponse upsert(
+            String dbId,
+            String schema,
+            String table,
+            List<String> columns,
+            Map<String, Object> data,
+            UpsertConfig config
+    ) {
+        Objects.requireNonNull(config, "UpsertConfig must not be null");
+
+        try {
+            // 1. Get actual table
+            DbTable dbTable = jdbcManager.getTable(dbId, schema, table);
+
+            // 2. Determine the columns to be included
+            List<String> insertableColumns = isEmpty(columns)
+                    ? new ArrayList<>(data.keySet().stream().toList())
+                    : new ArrayList<>(columns);
+
+            // 3. Convert to insertable column objects
+            List<InsertableColumn> insertableColumnList = new ArrayList<>();
+            for (String colName : insertableColumns) {
+                insertableColumnList.add(new InsertableColumn(colName, null));
+            }
+
+            // 4. Process types
+            jdbcManager.getDialect(dbId).processTypes(dbTable, insertableColumns, data);
+
+            // 5. Build context and generate SQL
+            CreateContext context = new CreateContext(dbId, dbTable, insertableColumns, insertableColumnList);
+
+            String onConflictClause = jdbcManager.getDialect(dbId)
+                    .renderOnConflictClause(config.conflictColumns(), config.updateColumns());
+
+            String sql = sqlCreatorTemplate.upsert(context, onConflictClause);
+
+            log.debug("UPSERT SQL - {}", sql);
+            log.debug("Data - {}", data);
+
+            // 6. Execute within transaction
+            return jdbcManager.getTxnTemplate(dbId).execute(status -> {
+                try {
+                    return dbOperationService.create(
+                            jdbcManager.getNamedParameterJdbcTemplate(dbId),
+                            data, sql, dbTable
+                    );
+                } catch (Exception e) {
+                    status.setRollbackOnly();
+                    Throwable rootCause = e;
+                    while (nonNull(rootCause.getCause())) {
+                        rootCause = rootCause.getCause();
+                    }
+                    log.error("UPSERT failed - Root cause: {}", rootCause.getMessage());
+                    throw new RuntimeException(
+                            "ERROR DURING UPSERT -> " + e.getMessage() + " | Root cause: " + rootCause.getMessage(), e);
+                }
+            });
         } catch (DataAccessException | DbException e) {
             log.error("ERROR -> {}", e.getMessage());
             throw new RuntimeException(e.getMessage());

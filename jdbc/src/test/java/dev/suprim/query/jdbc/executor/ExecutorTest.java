@@ -15,6 +15,7 @@ import dev.suprim.query.jdbc.processor.ReadProcessor;
 import dev.suprim.query.jdbc.processor.TSIDProcessor;
 import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbTable;
+import dev.suprim.query.model.UpsertConfig;
 import dev.suprim.query.model.context.ReadContext;
 import dev.suprim.query.model.dto.BulkUpdate;
 import dev.suprim.query.model.dto.CountResponse;
@@ -351,6 +352,184 @@ class ExecutorTest {
                     .hasMessageContaining("ERROR DURING INSERTION");
 
             verify(mockStatus).setRollbackOnly();
+        }
+    }
+
+    @Nested
+    @DisplayName("JdbcCreationService Upsert Tests")
+    class JdbcCreationServiceUpsertTests {
+
+        private JdbcCreationService creationService;
+
+        @BeforeEach
+        void setup() {
+            creationService = new JdbcCreationService(tsidProcessor, sqlCreatorTemplate, jdbcManager, dbOperationService);
+        }
+
+        @Test
+        void upsert_doUpdate_returnsCreationResponse() throws Exception {
+            when(jdbcManager.getTable("test", "public", "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.renderOnConflictClause(anyList(), anyList()))
+                    .thenReturn("ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name");
+            when(sqlCreatorTemplate.upsert(any(), anyString()))
+                    .thenReturn("INSERT INTO users (name, email) VALUES (:name, :email) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name");
+
+            CreationResponse expectedResponse = new CreationResponse(1, Map.of("id", 1L));
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+            data.put("email", "john@test.com");
+
+            UpsertConfig config = new UpsertConfig(List.of("email"), List.of("name"));
+            CreationResponse result = creationService.upsert("test", "public", "users", null, data, config);
+
+            assertThat(result).isNotNull();
+            assertThat(result.row()).isEqualTo(1);
+            verify(dialect).renderOnConflictClause(List.of("email"), List.of("name"));
+        }
+
+        @Test
+        void upsert_doNothing_returnsCreationResponse() throws Exception {
+            when(jdbcManager.getTable("test", "public", "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.renderOnConflictClause(anyList(), isNull()))
+                    .thenReturn("ON CONFLICT (email) DO NOTHING");
+            when(sqlCreatorTemplate.upsert(any(), anyString()))
+                    .thenReturn("INSERT INTO users (name, email) VALUES (:name, :email) ON CONFLICT (email) DO NOTHING");
+
+            CreationResponse expectedResponse = new CreationResponse(0, null);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+            data.put("email", "john@test.com");
+
+            UpsertConfig config = new UpsertConfig(List.of("email"), null);
+            CreationResponse result = creationService.upsert("test", "public", "users", null, data, config);
+
+            assertThat(result).isNotNull();
+            assertThat(result.row()).isEqualTo(0);
+        }
+
+        @Test
+        void upsert_withSpecificColumns_usesProvidedColumns() throws Exception {
+            when(jdbcManager.getTable("test", "public", "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.renderOnConflictClause(anyList(), anyList()))
+                    .thenReturn("ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name");
+            when(sqlCreatorTemplate.upsert(any(), anyString())).thenReturn("UPSERT SQL");
+
+            CreationResponse expectedResponse = new CreationResponse(1, Map.of("id", 1L));
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenReturn(expectedResponse);
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+            data.put("email", "john@test.com");
+
+            UpsertConfig config = new UpsertConfig(List.of("email"), List.of("name"));
+            CreationResponse result = creationService.upsert("test", "public", "users", List.of("name", "email"), data, config);
+
+            assertThat(result).isNotNull();
+            assertThat(result.row()).isEqualTo(1);
+        }
+
+        @Test
+        void upsert_nullConfig_throwsNullPointerException() {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            assertThatThrownBy(() -> creationService.upsert("test", "public", "users", null, data, null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("UpsertConfig must not be null");
+        }
+
+        @Test
+        void upsert_invalidTable_throwsRuntimeException() throws Exception {
+            when(jdbcManager.getTable("test", "public", "nonexistent"))
+                    .thenThrow(new DbException(DbErrorCode.INVALID_REQUEST, "Invalid table"));
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+
+            UpsertConfig config = new UpsertConfig(List.of("email"), List.of("name"));
+
+            assertThatThrownBy(() -> creationService.upsert("test", "public", "nonexistent", null, data, config))
+                    .isInstanceOf(RuntimeException.class);
+        }
+
+        @Test
+        void upsert_transactionException_rollsBackAndThrows() throws Exception {
+            when(jdbcManager.getTable("test", "public", "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.renderOnConflictClause(anyList(), anyList()))
+                    .thenReturn("ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name");
+            when(sqlCreatorTemplate.upsert(any(), anyString())).thenReturn("UPSERT SQL");
+
+            TransactionStatus mockStatus = mock(TransactionStatus.class);
+            when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                TransactionCallback<?> callback = invocation.getArgument(0);
+                return callback.doInTransaction(mockStatus);
+            });
+            when(dbOperationService.create(eq(namedParameterJdbcTemplate), anyMap(), anyString(), eq(usersTable)))
+                    .thenThrow(new RuntimeException("DB error", new IllegalStateException("root cause")));
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+            data.put("email", "john@test.com");
+
+            UpsertConfig config = new UpsertConfig(List.of("email"), List.of("name"));
+
+            assertThatThrownBy(() -> creationService.upsert("test", "public", "users", null, data, config))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("ERROR DURING UPSERT");
+
+            verify(mockStatus).setRollbackOnly();
+        }
+
+        @Test
+        void upsert_dataAccessException_throwsRuntimeException() throws Exception {
+            when(jdbcManager.getTable("test", "public", "users")).thenReturn(usersTable);
+            when(jdbcManager.getDialect("test")).thenReturn(dialect);
+            when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+            when(dialect.renderOnConflictClause(anyList(), anyList()))
+                    .thenReturn("ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name");
+            when(sqlCreatorTemplate.upsert(any(), anyString())).thenReturn("UPSERT SQL");
+
+            when(transactionTemplate.execute(any())).thenThrow(new DataAccessResourceFailureException("Connection lost"));
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", "John");
+            data.put("email", "john@test.com");
+
+            UpsertConfig config = new UpsertConfig(List.of("email"), List.of("name"));
+
+            assertThatThrownBy(() -> creationService.upsert("test", "public", "users", null, data, config))
+                    .isInstanceOf(RuntimeException.class);
         }
     }
 

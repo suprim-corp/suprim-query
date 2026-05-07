@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
 /**
@@ -181,8 +182,31 @@ public abstract class Dialect {
         return "read";
     }
 
+    public String getUpsertSqlTemplate() {
+        return "upsert";
+    }
+
     public String getUpdateSqlTemplate() {
         return "update";
+    }
+
+    /**
+     * Generates the ON CONFLICT clause for upsert operations.
+     * Default implementation uses PostgreSQL syntax.
+     *
+     * @param conflictColumns columns forming the conflict target
+     * @param updateColumns   columns to update on conflict; if empty, DO NOTHING
+     * @return the ON CONFLICT clause string
+     */
+    public String renderOnConflictClause(List<String> conflictColumns, List<String> updateColumns) {
+        String conflictTarget = String.join(", ", conflictColumns);
+        if (isNull(updateColumns) || updateColumns.isEmpty()) {
+            return "ON CONFLICT (" + conflictTarget + ") DO NOTHING";
+        }
+        List<String> setClauses = updateColumns.stream()
+                .map(col -> col + " = EXCLUDED." + col)
+                .toList();
+        return "ON CONFLICT (" + conflictTarget + ") DO UPDATE SET " + String.join(", ", setClauses);
     }
 
     public Object convertTimestamp(String value) throws DbException {

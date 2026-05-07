@@ -374,4 +374,51 @@ class DialectTest {
             throw new DbException(dev.suprim.query.exception.DbErrorCode.SERVER_ERROR, "Forced exception for testing");
         }
     }
+
+    // --- renderOnConflictClause tests ---
+
+    @Test
+    void renderOnConflictClause_withUpdateColumns_returnsDoUpdateSet() {
+        String result = dialect.renderOnConflictClause(
+                List.of("email"),
+                List.of("name", "age")
+        );
+
+        assertThat(result).isEqualTo("ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, age = EXCLUDED.age");
+    }
+
+    @Test
+    void renderOnConflictClause_multipleConflictColumns_returnsComposite() {
+        String result = dialect.renderOnConflictClause(
+                List.of("tenant_id", "email"),
+                List.of("name")
+        );
+
+        assertThat(result).isEqualTo("ON CONFLICT (tenant_id, email) DO UPDATE SET name = EXCLUDED.name");
+    }
+
+    @Test
+    void renderOnConflictClause_nullUpdateColumns_returnsDoNothing() {
+        String result = dialect.renderOnConflictClause(
+                List.of("email"),
+                null
+        );
+
+        assertThat(result).isEqualTo("ON CONFLICT (email) DO NOTHING");
+    }
+
+    @Test
+    void renderOnConflictClause_emptyUpdateColumns_returnsDoNothing() {
+        String result = dialect.renderOnConflictClause(
+                List.of("email"),
+                List.of()
+        );
+
+        assertThat(result).isEqualTo("ON CONFLICT (email) DO NOTHING");
+    }
+
+    @Test
+    void getUpsertSqlTemplate_returnsUpsert() {
+        assertThat(dialect.getUpsertSqlTemplate()).isEqualTo("upsert");
+    }
 }

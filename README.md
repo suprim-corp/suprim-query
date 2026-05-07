@@ -459,18 +459,16 @@ import dev.suprim.query.jdbc.config.DatabaseContextHolder;
 DatabaseContextHolder.setCurrentDbId("tenant_abc");
 
 try{
-// All queries now route to tenant_abc's datasource
-List<Map<String, Object>> data = readService.findAll(
-		ReadContext.builder()
-		           .dbId("tenant_abc")
-		           .tableName("invoices")
-		           .fields("*")
-		           .build()
-);
-}finally{
-		DatabaseContextHolder.
-
-clear();
+    // All queries now route to tenant_abc's datasource
+    List<Map<String, Object>> data = readService.findAll(
+            ReadContext.builder()
+                       .dbId("tenant_abc")
+                       .tableName("invoices")
+                       .fields("*")
+                       .build()
+    );
+} finally {
+		DatabaseContextHolder.clear();
 }
 ```
 

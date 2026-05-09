@@ -191,6 +191,16 @@ public abstract class Dialect {
     }
 
     /**
+     * Returns the SQL expression for the current timestamp.
+     * Override in dialect subclasses that use a different function.
+     *
+     * @return SQL expression for current timestamp (default: {@code NOW()})
+     */
+    public String currentTimestamp() {
+        return "NOW()";
+    }
+
+    /**
      * Generates the ON CONFLICT clause for upsert operations.
      * Default implementation uses PostgreSQL syntax.
      *

@@ -223,4 +223,76 @@ class SimpleModelsTest {
         assertThat(config.conflictColumns()).containsExactly("tenant_id", "email");
         assertThat(config.updateColumns()).containsExactly("name");
     }
+
+    // --- SoftDeleteProperties ---
+
+    @Test
+    void softDeleteProperties_defaultColumn_whenNullColumn() {
+        var props = new SoftDeleteProperties(true, null, List.of());
+
+        assertThat(props.column()).isEqualTo("deleted_at");
+    }
+
+    @Test
+    void softDeleteProperties_defaultColumn_whenBlankColumn() {
+        var props = new SoftDeleteProperties(true, "  ", List.of());
+
+        assertThat(props.column()).isEqualTo("deleted_at");
+    }
+
+    @Test
+    void softDeleteProperties_customColumn_preserved() {
+        var props = new SoftDeleteProperties(true, "removed_at", List.of());
+
+        assertThat(props.column()).isEqualTo("removed_at");
+    }
+
+    @Test
+    void softDeleteProperties_nullTables_becomesEmptyList() {
+        var props = new SoftDeleteProperties(true, "deleted_at", null);
+
+        assertThat(props.tables()).isEmpty();
+    }
+
+    @Test
+    void softDeleteProperties_tables_defensivelyCopied() {
+        var mutable = new java.util.ArrayList<>(List.of("users", "orders"));
+        var props = new SoftDeleteProperties(true, "deleted_at", mutable);
+        mutable.add("products");
+
+        assertThat(props.tables()).containsExactly("users", "orders");
+    }
+
+    @Test
+    void softDeleteProperties_appliesTo_returnsFalseWhenDisabled() {
+        var props = new SoftDeleteProperties(false, "deleted_at", List.of());
+
+        assertThat(props.appliesTo("users")).isFalse();
+    }
+
+    @Test
+    void softDeleteProperties_appliesTo_allTablesWhenListEmpty() {
+        var props = new SoftDeleteProperties(true, "deleted_at", List.of());
+
+        assertThat(props.appliesTo("users")).isTrue();
+        assertThat(props.appliesTo("orders")).isTrue();
+    }
+
+    @Test
+    void softDeleteProperties_appliesTo_onlyAllowlistedTables() {
+        var props = new SoftDeleteProperties(true, "deleted_at", List.of("users"));
+
+        assertThat(props.appliesTo("users")).isTrue();
+        assertThat(props.appliesTo("orders")).isFalse();
+    }
+
+    @Test
+    void softDeleteProperties_disabled_factoryMethod() {
+        var props = SoftDeleteProperties.disabled();
+
+        assertThat(props.enabled()).isFalse();
+        assertThat(props.column()).isEqualTo("deleted_at");
+        assertThat(props.tables()).isEmpty();
+        assertThat(props.appliesTo("anything")).isFalse();
+    }
 }

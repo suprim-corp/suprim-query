@@ -242,6 +242,48 @@ int totalDeleted = deleteService.deleteBulk("main", "public", "sessions", filter
 // If any single delete fails, all changes are rolled back
 ```
 
+### Soft delete
+
+When enabled, `DELETE` operations are rewritten to `UPDATE SET deleted_at = NOW()` and all read
+queries automatically append `AND deleted_at IS NULL` to exclude soft-deleted rows.
+
+#### Configuration
+
+```yaml
+db:
+    soft-delete:
+        enabled: true
+        column: deleted_at          # optional, defaults to "deleted_at"
+        tables:                     # optional, if empty applies to ALL tables
+            - users
+            - orders
+```
+
+#### Per-query opt-out
+
+To include soft-deleted rows in a specific query:
+
+```java
+ReadContext context = ReadContext.builder()
+                                 .dbId("main")
+                                 .tableName("users")
+                                 .fields("*")
+                                 .filter("email==john@example.com")
+                                 .includeSoftDeleted(true)  // bypasses the IS NULL filter
+                                 .build();
+
+List<Map<String, Object>> allUsers = readService.findAll(context);
+```
+
+#### Behavior summary
+
+| Operation | Soft-delete enabled | Soft-delete disabled |
+|-----------|--------------------|--------------------|
+| `readService.findAll(ctx)` | Appends `AND deleted_at IS NULL` | No change |
+| `readService.findAll(ctx)` with `includeSoftDeleted(true)` | No filter appended | No change |
+| `deleteService.delete(...)` | `UPDATE table SET deleted_at = NOW() WHERE ...` | `DELETE FROM table WHERE ...` |
+| `deleteService.deleteBulk(...)` | Same rewrite per filter | Same as above |
+
 ### Upsert (INSERT ... ON CONFLICT)
 
 ```java

@@ -15,7 +15,9 @@ import dev.suprim.query.jdbc.processor.ReadProcessor;
 import dev.suprim.query.jdbc.processor.TSIDProcessor;
 import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbTable;
+import dev.suprim.query.model.SoftDeleteProperties;
 import dev.suprim.query.model.UpsertConfig;
+import dev.suprim.query.model.context.DeleteContext;
 import dev.suprim.query.model.context.ReadContext;
 import dev.suprim.query.model.dto.BulkUpdate;
 import dev.suprim.query.model.dto.CountResponse;
@@ -1293,7 +1295,7 @@ class ExecutorTest {
 
         @BeforeEach
         void setup() {
-            deleteService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService);
+            deleteService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService, SoftDeleteProperties.disabled());
         }
 
         @Test
@@ -1499,6 +1501,158 @@ class ExecutorTest {
                     .hasMessageContaining("Connection lost");
 
             verify(mockStatus).setRollbackOnly();
+        }
+
+        @Nested
+        @DisplayName("Soft Delete Behavior")
+        class SoftDeleteTests {
+
+            private JdbcDeleteService softDeleteService;
+
+            @BeforeEach
+            void setup() {
+                SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+                softDeleteService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService, props);
+            }
+
+            @Test
+            void delete_softDeleteEnabled_callsSoftDeleteQuery() throws DbException {
+                when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+                when(jdbcManager.getDialect("test")).thenReturn(dialect);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(sqlCreatorTemplate.softDeleteQuery(any(DeleteContext.class), eq("deleted_at")))
+                        .thenReturn("UPDATE users SET t0.deleted_at = NOW() WHERE t0.id = :p0");
+
+                when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                    TransactionCallback<?> callback = invocation.getArgument(0);
+                    return callback.doInTransaction(null);
+                });
+                when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(1);
+
+                int result = softDeleteService.delete("test", null, "users", "id==1");
+
+                assertThat(result).isEqualTo(1);
+                verify(sqlCreatorTemplate).softDeleteQuery(any(DeleteContext.class), eq("deleted_at"));
+                verify(sqlCreatorTemplate, never()).deleteQuery(any());
+            }
+
+            @Test
+            void delete_softDeleteDisabled_callsDeleteQuery() throws DbException {
+                when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+                when(jdbcManager.getDialect("test")).thenReturn(dialect);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :p0");
+
+                when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                    TransactionCallback<?> callback = invocation.getArgument(0);
+                    return callback.doInTransaction(null);
+                });
+                when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(1);
+
+                int result = deleteService.delete("test", null, "users", "id==1");
+
+                assertThat(result).isEqualTo(1);
+                verify(sqlCreatorTemplate).deleteQuery(any());
+                verify(sqlCreatorTemplate, never()).softDeleteQuery(any(), anyString());
+            }
+
+            @Test
+            void delete_softDeleteWithTableAllowlist_appliesToMatchingTable() throws DbException {
+                SoftDeleteProperties restrictedProps = new SoftDeleteProperties(true, "deleted_at", List.of("users"));
+                JdbcDeleteService restrictedService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService, restrictedProps);
+
+                when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+                when(jdbcManager.getDialect("test")).thenReturn(dialect);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(sqlCreatorTemplate.softDeleteQuery(any(DeleteContext.class), eq("deleted_at")))
+                        .thenReturn("UPDATE users SET t0.deleted_at = NOW() WHERE t0.id = :p0");
+
+                when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                    TransactionCallback<?> callback = invocation.getArgument(0);
+                    return callback.doInTransaction(null);
+                });
+                when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(1);
+
+                int result = restrictedService.delete("test", null, "users", "id==1");
+
+                assertThat(result).isEqualTo(1);
+                verify(sqlCreatorTemplate).softDeleteQuery(any(DeleteContext.class), eq("deleted_at"));
+            }
+
+            @Test
+            void delete_softDeleteWithTableAllowlist_skipsNonMatchingTable() throws DbException {
+                SoftDeleteProperties restrictedProps = new SoftDeleteProperties(true, "deleted_at", List.of("orders"));
+                JdbcDeleteService restrictedService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService, restrictedProps);
+
+                when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+                when(jdbcManager.getDialect("test")).thenReturn(dialect);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(sqlCreatorTemplate.deleteQuery(any())).thenReturn("DELETE FROM users WHERE id = :p0");
+
+                when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                    TransactionCallback<?> callback = invocation.getArgument(0);
+                    return callback.doInTransaction(null);
+                });
+                when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(1);
+
+                int result = restrictedService.delete("test", null, "users", "id==1");
+
+                assertThat(result).isEqualTo(1);
+                verify(sqlCreatorTemplate).deleteQuery(any());
+                verify(sqlCreatorTemplate, never()).softDeleteQuery(any(), anyString());
+            }
+
+            @Test
+            void delete_softDeleteWithCustomColumn_usesCustomColumn() throws DbException {
+                SoftDeleteProperties customProps = new SoftDeleteProperties(true, "removed_at", List.of());
+                JdbcDeleteService customService = new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService, customProps);
+
+                when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+                when(jdbcManager.getDialect("test")).thenReturn(dialect);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(sqlCreatorTemplate.softDeleteQuery(any(DeleteContext.class), eq("removed_at")))
+                        .thenReturn("UPDATE users SET t0.removed_at = NOW() WHERE t0.id = :p0");
+
+                when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                    TransactionCallback<?> callback = invocation.getArgument(0);
+                    return callback.doInTransaction(null);
+                });
+                when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString())).thenReturn(1);
+
+                int result = customService.delete("test", null, "users", "id==1");
+
+                assertThat(result).isEqualTo(1);
+                verify(sqlCreatorTemplate).softDeleteQuery(any(DeleteContext.class), eq("removed_at"));
+            }
+
+            @Test
+            void deleteBulk_softDeleteEnabled_callsSoftDeleteQuery() throws DbException {
+                when(jdbcManager.getTable("test", null, "users")).thenReturn(usersTable);
+                when(jdbcManager.getDialect("test")).thenReturn(dialect);
+                when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
+                when(jdbcManager.getTxnTemplate("test")).thenReturn(transactionTemplate);
+                when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+                    TransactionCallback<?> callback = invocation.getArgument(0);
+                    return callback.doInTransaction(null);
+                });
+                when(sqlCreatorTemplate.softDeleteQuery(any(DeleteContext.class), eq("deleted_at")))
+                        .thenReturn("UPDATE users SET t0.deleted_at = NOW() WHERE t0.id = :p0");
+                when(dbOperationService.delete(eq(namedParameterJdbcTemplate), anyMap(), anyString()))
+                        .thenReturn(1).thenReturn(2);
+
+                List<String> filters = List.of("id==1", "id==2");
+
+                int result = softDeleteService.deleteBulk("test", null, "users", filters);
+
+                assertThat(result).isEqualTo(3);
+                verify(sqlCreatorTemplate, times(2)).softDeleteQuery(any(DeleteContext.class), eq("deleted_at"));
+                verify(sqlCreatorTemplate, never()).deleteQuery(any());
+            }
         }
     }
 

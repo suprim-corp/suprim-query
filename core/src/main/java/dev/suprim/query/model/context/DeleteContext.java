@@ -24,6 +24,7 @@ public class DeleteContext {
     String where;
     Map<String, Object> paramMap;
     Map<String, Object> data;
+    boolean softDelete;
 
     public void createParamMap() {
         if (isNull(paramMap)) {

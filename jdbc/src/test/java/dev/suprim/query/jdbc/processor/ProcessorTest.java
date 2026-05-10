@@ -800,4 +800,190 @@ class ProcessorTest {
                     .isInstanceOf(dev.suprim.query.exception.DbRuntimeException.class);
         }
     }
+
+    @Nested
+    @DisplayName("SoftDeleteProcessor Tests")
+    class SoftDeleteProcessorTests {
+
+        @Test
+        void process_softDeleteDisabled_doesNotModifyWhere() throws DbException {
+            SoftDeleteProperties props = SoftDeleteProperties.disabled();
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+            context.setFilter(null);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isNull();
+        }
+
+        @Test
+        void process_softDeleteEnabled_appendsIsNullCondition() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("t0.deleted_at IS NULL");
+        }
+
+        @Test
+        void process_softDeleteEnabled_withExistingWhere_appendsWithAnd() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+            context.setRootWhere("t0.id = :p0");
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("t0.id = :p0 AND t0.deleted_at IS NULL");
+        }
+
+        @Test
+        void process_includeSoftDeletedTrue_skipsFilter() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+            context.setIncludeSoftDeleted(true);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isNull();
+        }
+
+        @Test
+        void process_tableNotInAllowlist_skipsFilter() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of("orders"));
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isNull();
+        }
+
+        @Test
+        void process_tableInAllowlist_appliesFilter() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of("users"));
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("t0.deleted_at IS NULL");
+        }
+
+        @Test
+        void process_customColumn_usesCustomColumnName() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "removed_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("t0.removed_at IS NULL");
+        }
+
+        @Test
+        void process_nullAlias_usesUnqualifiedColumn() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            DbTable noAliasTable = new DbTable(
+                    "public", "users", "\"public\".\"users\"", null,
+                    usersTable.buildColumns(),
+                    "TABLE", "\""
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(noAliasTable);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("deleted_at IS NULL");
+        }
+
+        @Test
+        void process_blankAlias_usesUnqualifiedColumn() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            DbTable blankAliasTable = new DbTable(
+                    "public", "users", "\"public\".\"users\"", "",
+                    usersTable.buildColumns(),
+                    "TABLE", "\""
+            );
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(blankAliasTable);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("deleted_at IS NULL");
+        }
+
+        @Test
+        void process_emptyTablesList_appliesToAllTables() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("any_table");
+            context.setRoot(usersTable);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("t0.deleted_at IS NULL");
+        }
+
+        @Test
+        void process_blankExistingWhere_treatsAsEmpty() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(usersTable);
+            context.setRootWhere("   ");
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("t0.deleted_at IS NULL");
+        }
+    }
 }

@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
 @Slf4j
@@ -64,6 +65,36 @@ public record SqlCreatorTemplate(
         params.put("rootTableAlias", deleteContext.getTable().alias());
 
         return this.renderSqlTemplate(dialect.getDeleteSqlTemplate(), params);
+    }
+
+    /**
+     * Generates an UPDATE ... SET column = current_timestamp statement for soft-delete operations.
+     */
+    public String softDeleteQuery(DeleteContext deleteContext, String softDeleteColumn) throws DbException {
+        Dialect dialect = jdbcManager.getDialect(deleteContext.getDbId());
+        DbTable table = deleteContext.getTable();
+
+        String rendererTableName;
+        if (dialect.supportAlias()) {
+            rendererTableName = table.render();
+        } else {
+            rendererTableName = table.name();
+        }
+
+        String alias = table.alias();
+        String qualifiedColumn = (!isNull(alias) && !alias.isBlank())
+                ? alias + "." + softDeleteColumn
+                : softDeleteColumn;
+
+        String columnSets = qualifiedColumn + " = " + dialect.currentTimestamp();
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("rootTable", rendererTableName);
+        params.put("rootWhere", deleteContext.getWhere());
+        params.put("columnSets", columnSets);
+        params.put("rootTableAlias", alias);
+
+        return this.renderSqlTemplate(dialect.getUpdateSqlTemplate(), params);
     }
 
     public String create(CreateContext createContext) throws DbException {

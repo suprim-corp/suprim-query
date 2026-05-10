@@ -17,6 +17,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import dev.suprim.query.model.SoftDeleteProperties;
 import tools.jackson.databind.ObjectMapper;
 
 import javax.sql.DataSource;
@@ -401,8 +402,9 @@ class DbAutoConfigurationTest {
         TemplateEngine templateEngine = config.templateEngine();
         SqlCreatorTemplate sqlCreatorTemplate = config.sqlCreatorTemplate(templateEngine, jdbcManager);
         DbOperationService dbOperationService = config.dbOperationService();
+        SoftDeleteProperties softDeleteProperties = config.softDeleteProperties();
 
-        DeleteService service = config.deleteService(jdbcManager, sqlCreatorTemplate, dbOperationService);
+        DeleteService service = config.deleteService(jdbcManager, sqlCreatorTemplate, dbOperationService, softDeleteProperties);
 
         assertThat(service).isNotNull();
     }

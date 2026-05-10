@@ -28,6 +28,7 @@ public class ReadContext {
     long offset;
     List<JoinDetail> joins;
     int defaultFetchLimit;
+    boolean includeSoftDeleted;
 
     // Derived attributes
     DbTable root;

@@ -9,6 +9,7 @@ import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
 import dev.suprim.query.model.DbTable;
 import dev.suprim.query.model.DbWhere;
+import dev.suprim.query.model.SoftDeleteProperties;
 import dev.suprim.query.model.context.DeleteContext;
 import dev.suprim.query.rsql.parser.RSQLParserBuilder;
 import dev.suprim.query.rsql.visitor.BaseRSQLVisitor;
@@ -27,6 +28,7 @@ public class JdbcDeleteService implements DeleteService {
     private final JdbcManager jdbcManager;
     private final SqlCreatorTemplate sqlCreatorTemplate;
     private final DbOperationService dbOperationService;
+    private final SoftDeleteProperties softDeleteProperties;
 
     @Override
     @Transactional
@@ -47,6 +49,7 @@ public class JdbcDeleteService implements DeleteService {
                 .dbId(dbId)
                 .tableName(tableName)
                 .table(dbTable)
+                .softDelete(softDeleteProperties.appliesTo(tableName))
                 .build();
 
         context.createParamMap();
@@ -102,12 +105,13 @@ public class JdbcDeleteService implements DeleteService {
                 .dbId(dbId)
                 .tableName(tableName)
                 .table(dbTable)
+                .softDelete(softDeleteProperties.appliesTo(tableName))
                 .build();
 
         context.createParamMap();
 
         addWhere(filter, dbTable, context);
-        String sql = sqlCreatorTemplate.deleteQuery(context);
+        String sql = buildDeleteSql(context);
 
         log.debug("Bulk delete SQL: {}", sql);
         log.debug("Bulk delete params: {}", context.getParamMap());
@@ -126,7 +130,7 @@ public class JdbcDeleteService implements DeleteService {
             DeleteContext context
     ) throws DbException {
         addWhere(filter, table, context);
-        String sql = sqlCreatorTemplate.deleteQuery(context);
+        String sql = buildDeleteSql(context);
 
         log.debug("Delete SQL: {}", sql);
         log.debug("Delete Params: {}", context.getParamMap());
@@ -146,6 +150,17 @@ public class JdbcDeleteService implements DeleteService {
         });
 
         return isNull(result) ? 0 : result;
+    }
+
+    /**
+     * Builds the SQL for a delete operation. When soft-delete is active for the table,
+     * generates an UPDATE SET column = NOW() instead of a DELETE statement.
+     */
+    private String buildDeleteSql(DeleteContext context) throws DbException {
+        if (context.isSoftDelete()) {
+            return sqlCreatorTemplate.softDeleteQuery(context, softDeleteProperties.column());
+        }
+        return sqlCreatorTemplate.deleteQuery(context);
     }
 
     private void addWhere(String filter, DbTable table, DeleteContext context) throws DbException {

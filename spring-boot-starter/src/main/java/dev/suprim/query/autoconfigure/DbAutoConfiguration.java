@@ -9,6 +9,7 @@ import dev.suprim.query.jdbc.executor.creation.CreationService;
 import dev.suprim.query.jdbc.executor.creation.JdbcCreationService;
 import dev.suprim.query.jdbc.executor.deletion.DeleteService;
 import dev.suprim.query.jdbc.executor.deletion.JdbcDeleteService;
+import dev.suprim.query.model.SoftDeleteProperties;
 import dev.suprim.query.jdbc.executor.raw.JdbcRawQueryService;
 import dev.suprim.query.jdbc.executor.raw.RawQueryService;
 import dev.suprim.query.jdbc.executor.read.JdbcReadService;
@@ -177,6 +178,18 @@ public class DbAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public SoftDeleteProperties softDeleteProperties() {
+        return dbProperties.resolveSoftDeleteProperties();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SoftDeleteProcessor softDeleteProcessor(SoftDeleteProperties softDeleteProperties) {
+        return new SoftDeleteProcessor(softDeleteProperties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ReadService readService(
             JdbcManager jdbcManager,
             SqlCreatorTemplate sqlCreatorTemplate,
@@ -212,9 +225,10 @@ public class DbAutoConfiguration {
     public DeleteService deleteService(
             JdbcManager jdbcManager,
             SqlCreatorTemplate sqlCreatorTemplate,
-            DbOperationService dbOperationService
+            DbOperationService dbOperationService,
+            SoftDeleteProperties softDeleteProperties
     ) {
-        return new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService);
+        return new JdbcDeleteService(jdbcManager, sqlCreatorTemplate, dbOperationService, softDeleteProperties);
     }
 
     @Bean

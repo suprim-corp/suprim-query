@@ -139,6 +139,42 @@ public record ExpressionField(String expression, String alias) {
 	}
 
 	/**
+	 * Creates a DATE_TRUNC expression.
+	 * Precision is auto-wrapped with single quotes, column is auto-quoted with double quotes.
+	 * Renders as: {@code DATE_TRUNC('precision', "column")}.
+	 *
+	 * @param precision the truncation precision (e.g. year, month, day)
+	 * @param column    the column name
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField dateTrunc(String precision, String column) {
+		if (isNull(precision) || precision.isBlank()) {
+			throw new IllegalArgumentException("Precision must not be null or blank");
+		}
+		validateColumn(column);
+		return new ExpressionField("DATE_TRUNC('" + precision.strip() + "', " + quoteColumn(column) + ")", null);
+	}
+
+	/**
+	 * Creates an EXTRACT expression.
+	 * Field is rendered raw (SQL keyword), source is auto-quoted with double quotes.
+	 * Renders as: {@code EXTRACT(field FROM "source")}.
+	 *
+	 * @param field  the date/time field to extract (e.g. YEAR, MONTH, DAY, HOUR)
+	 * @param source the source column name
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField extract(String field, String source) {
+		if (isNull(field) || field.isBlank()) {
+			throw new IllegalArgumentException("Field must not be null or blank");
+		}
+		if (isNull(source) || source.isBlank()) {
+			throw new IllegalArgumentException("Source must not be null or blank");
+		}
+		return new ExpressionField("EXTRACT(" + field.strip() + " FROM " + quoteColumn(source) + ")", null);
+	}
+
+	/**
 	 * Returns a new ExpressionField with the given alias.
 	 *
 	 * @param alias the alias to assign

@@ -28,6 +28,80 @@ public record ExpressionField(String expression, String alias) {
 	}
 
 	/**
+	 * Creates a COUNT aggregate expression.
+	 * If column is {@code "*"}, renders as {@code COUNT(*)}.
+	 * Otherwise, the column name is quoted: {@code COUNT("column")}.
+	 *
+	 * @param column the column name or "*"
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField count(String column) {
+		validateColumn(column);
+		String col = "*".equals(column.strip()) ? "*" : quoteColumn(column);
+		return new ExpressionField("COUNT(" + col + ")", null);
+	}
+
+	/**
+	 * Creates a COUNT(DISTINCT ...) aggregate expression.
+	 * The column name is quoted: {@code COUNT(DISTINCT "column")}.
+	 *
+	 * @param column the column name
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField countDistinct(String column) {
+		validateColumn(column);
+		return new ExpressionField("COUNT(DISTINCT " + quoteColumn(column) + ")", null);
+	}
+
+	/**
+	 * Creates a SUM aggregate expression.
+	 * The column name is quoted: {@code SUM("column")}.
+	 *
+	 * @param column the column name
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField sum(String column) {
+		validateColumn(column);
+		return new ExpressionField("SUM(" + quoteColumn(column) + ")", null);
+	}
+
+	/**
+	 * Creates an AVG aggregate expression.
+	 * The column name is quoted: {@code AVG("column")}.
+	 *
+	 * @param column the column name
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField avg(String column) {
+		validateColumn(column);
+		return new ExpressionField("AVG(" + quoteColumn(column) + ")", null);
+	}
+
+	/**
+	 * Creates a MAX aggregate expression.
+	 * The column name is quoted: {@code MAX("column")}.
+	 *
+	 * @param column the column name
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField max(String column) {
+		validateColumn(column);
+		return new ExpressionField("MAX(" + quoteColumn(column) + ")", null);
+	}
+
+	/**
+	 * Creates a MIN aggregate expression.
+	 * The column name is quoted: {@code MIN("column")}.
+	 *
+	 * @param column the column name
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField min(String column) {
+		validateColumn(column);
+		return new ExpressionField("MIN(" + quoteColumn(column) + ")", null);
+	}
+
+	/**
 	 * Returns a new ExpressionField with the given alias.
 	 *
 	 * @param alias the alias to assign
@@ -50,5 +124,15 @@ public record ExpressionField(String expression, String alias) {
 			return expression;
 		}
 		return expression + " AS \"" + alias + "\"";
+	}
+
+	private static void validateColumn(String column) {
+		if (isNull(column) || column.isBlank()) {
+			throw new IllegalArgumentException("Column must not be null or blank");
+		}
+	}
+
+	private static String quoteColumn(String column) {
+		return "\"" + column.strip() + "\"";
 	}
 }

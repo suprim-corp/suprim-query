@@ -487,4 +487,150 @@ class ExpressionFieldTest {
 
 		assertThat(expr.renderWithAlias()).isEqualTo("NULLIF(amount, 0) AS \"safe_amount\"");
 	}
+
+	// === dateTrunc() ===
+
+	@Test
+	void dateTrunc_shouldQuotePrecisionAndColumn() {
+		ExpressionField expr = ExpressionField.dateTrunc("month", "created_at");
+
+		assertThat(expr.expression()).isEqualTo("DATE_TRUNC('month', \"created_at\")");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void dateTrunc_withDayPrecision_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.dateTrunc("day", "updated_at");
+
+		assertThat(expr.expression()).isEqualTo("DATE_TRUNC('day', \"updated_at\")");
+	}
+
+	@Test
+	void dateTrunc_withNullPrecision_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.dateTrunc(null, "created_at"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Precision must not be null or blank");
+	}
+
+	@Test
+	void dateTrunc_withBlankPrecision_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.dateTrunc("  ", "created_at"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Precision must not be null or blank");
+	}
+
+	@Test
+	void dateTrunc_withEmptyPrecision_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.dateTrunc("", "created_at"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Precision must not be null or blank");
+	}
+
+	@Test
+	void dateTrunc_withNullColumn_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.dateTrunc("month", null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Column must not be null or blank");
+	}
+
+	@Test
+	void dateTrunc_withBlankColumn_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.dateTrunc("month", "  "))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Column must not be null or blank");
+	}
+
+	@Test
+	void dateTrunc_withEmptyColumn_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.dateTrunc("month", ""))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Column must not be null or blank");
+	}
+
+	@Test
+	void dateTrunc_withAlias_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.dateTrunc("year", "created_at").as("truncated");
+
+		assertThat(expr.renderWithAlias()).isEqualTo("DATE_TRUNC('year', \"created_at\") AS \"truncated\"");
+	}
+
+	// === extract() ===
+
+	@Test
+	void extract_shouldRenderFieldAndQuoteSource() {
+		ExpressionField expr = ExpressionField.extract("YEAR", "created_at");
+
+		assertThat(expr.expression()).isEqualTo("EXTRACT(YEAR FROM \"created_at\")");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void extract_withMonth_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.extract("MONTH", "birth_date");
+
+		assertThat(expr.expression()).isEqualTo("EXTRACT(MONTH FROM \"birth_date\")");
+	}
+
+	@Test
+	void extract_withDay_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.extract("DAY", "event_date");
+
+		assertThat(expr.expression()).isEqualTo("EXTRACT(DAY FROM \"event_date\")");
+	}
+
+	@Test
+	void extract_withHour_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.extract("HOUR", "logged_at");
+
+		assertThat(expr.expression()).isEqualTo("EXTRACT(HOUR FROM \"logged_at\")");
+	}
+
+	@Test
+	void extract_withNullField_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.extract(null, "created_at"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Field must not be null or blank");
+	}
+
+	@Test
+	void extract_withBlankField_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.extract("  ", "created_at"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Field must not be null or blank");
+	}
+
+	@Test
+	void extract_withEmptyField_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.extract("", "created_at"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Field must not be null or blank");
+	}
+
+	@Test
+	void extract_withNullSource_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.extract("YEAR", null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Source must not be null or blank");
+	}
+
+	@Test
+	void extract_withBlankSource_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.extract("YEAR", "  "))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Source must not be null or blank");
+	}
+
+	@Test
+	void extract_withEmptySource_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.extract("YEAR", ""))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Source must not be null or blank");
+	}
+
+	@Test
+	void extract_withAlias_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.extract("MONTH", "created_at").as("birth_month");
+
+		assertThat(expr.renderWithAlias()).isEqualTo("EXTRACT(MONTH FROM \"created_at\") AS \"birth_month\"");
+	}
 }

@@ -102,6 +102,43 @@ public record ExpressionField(String expression, String alias) {
 	}
 
 	/**
+	 * Creates a COALESCE expression from the given arguments.
+	 * Arguments are rendered as-is (no quoting) — user handles quoting.
+	 *
+	 * @param args the arguments to COALESCE
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField coalesce(String... args) {
+		if (isNull(args) || args.length == 0) {
+			throw new IllegalArgumentException("Arguments must not be null or empty");
+		}
+		for (int i = 0; i < args.length; i++) {
+			if (isNull(args[i]) || args[i].isBlank()) {
+				throw new IllegalArgumentException("Argument at index " + i + " must not be null or blank");
+			}
+		}
+		return new ExpressionField("COALESCE(" + String.join(", ", args) + ")", null);
+	}
+
+	/**
+	 * Creates a NULLIF expression.
+	 * Arguments are rendered as-is (no quoting) — user handles quoting.
+	 *
+	 * @param expr  the expression to evaluate
+	 * @param value the value to compare against
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField nullif(String expr, String value) {
+		if (isNull(expr) || expr.isBlank()) {
+			throw new IllegalArgumentException("Expression argument must not be null or blank");
+		}
+		if (isNull(value) || value.isBlank()) {
+			throw new IllegalArgumentException("Value argument must not be null or blank");
+		}
+		return new ExpressionField("NULLIF(" + expr + ", " + value + ")", null);
+	}
+
+	/**
 	 * Returns a new ExpressionField with the given alias.
 	 *
 	 * @param alias the alias to assign

@@ -352,4 +352,139 @@ class ExpressionFieldTest {
 
 		assertThat(expr.renderWithAlias()).isEqualTo("MIN(\"id\") AS \"smallest_id\"");
 	}
+
+	// === coalesce() ===
+
+	@Test
+	void coalesce_withMultipleArgs_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.coalesce("u.name", "'unknown'");
+
+		assertThat(expr.expression()).isEqualTo("COALESCE(u.name, 'unknown')");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void coalesce_withSingleArg_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.coalesce("u.name");
+
+		assertThat(expr.expression()).isEqualTo("COALESCE(u.name)");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void coalesce_withThreeArgs_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.coalesce("a.value", "b.value", "0");
+
+		assertThat(expr.expression()).isEqualTo("COALESCE(a.value, b.value, 0)");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void coalesce_withNull_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.coalesce((String[]) null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Arguments must not be null or empty");
+	}
+
+	@Test
+	void coalesce_withEmptyArray_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.coalesce())
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Arguments must not be null or empty");
+	}
+
+	@Test
+	void coalesce_withNullElement_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.coalesce("a.value", null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Argument at index 1 must not be null or blank");
+	}
+
+	@Test
+	void coalesce_withBlankElement_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.coalesce("a.value", "  "))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Argument at index 1 must not be null or blank");
+	}
+
+	@Test
+	void coalesce_withEmptyElement_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.coalesce(""))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Argument at index 0 must not be null or blank");
+	}
+
+	@Test
+	void coalesce_withAlias_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.coalesce("u.name", "'unknown'").as("display_name");
+
+		assertThat(expr.renderWithAlias()).isEqualTo("COALESCE(u.name, 'unknown') AS \"display_name\"");
+	}
+
+	// === nullif() ===
+
+	@Test
+	void nullif_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.nullif("u.status", "'inactive'");
+
+		assertThat(expr.expression()).isEqualTo("NULLIF(u.status, 'inactive')");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void nullif_withNumericValue_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.nullif("amount", "0");
+
+		assertThat(expr.expression()).isEqualTo("NULLIF(amount, 0)");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void nullif_withNullExpr_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.nullif(null, "'value'"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Expression argument must not be null or blank");
+	}
+
+	@Test
+	void nullif_withBlankExpr_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.nullif("  ", "'value'"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Expression argument must not be null or blank");
+	}
+
+	@Test
+	void nullif_withEmptyExpr_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.nullif("", "'value'"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Expression argument must not be null or blank");
+	}
+
+	@Test
+	void nullif_withNullValue_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.nullif("u.status", null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Value argument must not be null or blank");
+	}
+
+	@Test
+	void nullif_withBlankValue_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.nullif("u.status", "  "))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Value argument must not be null or blank");
+	}
+
+	@Test
+	void nullif_withEmptyValue_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.nullif("u.status", ""))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Value argument must not be null or blank");
+	}
+
+	@Test
+	void nullif_withAlias_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.nullif("amount", "0").as("safe_amount");
+
+		assertThat(expr.renderWithAlias()).isEqualTo("NULLIF(amount, 0) AS \"safe_amount\"");
+	}
 }

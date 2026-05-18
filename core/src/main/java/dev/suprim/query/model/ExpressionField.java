@@ -46,7 +46,7 @@ public record ExpressionField(String expression, String alias) {
 	 * @return the rendered SQL fragment
 	 */
 	public String renderWithAlias() {
-		if (isNull(alias) || alias.isBlank()) {
+		if (isNull(alias)) {
 			return expression;
 		}
 		return expression + " AS \"" + alias + "\"";

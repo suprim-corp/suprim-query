@@ -11,6 +11,12 @@ import static java.util.Objects.isNull;
  */
 public record ExpressionField(String expression, String alias) {
 
+	public ExpressionField {
+		if (isNull(expression) || expression.isBlank()) {
+			throw new IllegalArgumentException("Expression must not be null or blank");
+		}
+	}
+
 	/**
 	 * Creates an ExpressionField from a raw SQL string.
 	 *
@@ -18,9 +24,6 @@ public record ExpressionField(String expression, String alias) {
 	 * @return a new ExpressionField with no alias
 	 */
 	public static ExpressionField raw(String sql) {
-		if (isNull(sql) || sql.isBlank()) {
-			throw new IllegalArgumentException("Expression must not be null or blank");
-		}
 		return new ExpressionField(sql, null);
 	}
 

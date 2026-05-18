@@ -102,4 +102,18 @@ class ExpressionFieldTest {
 		assertThat(expr.alias()).isEqualTo("final_alias");
 		assertThat(expr.renderWithAlias()).isEqualTo("SUM(amount) AS \"final_alias\"");
 	}
+
+	@Test
+	void constructor_withNullExpression_shouldThrowException() {
+		assertThatThrownBy(() -> new ExpressionField(null, null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Expression must not be null or blank");
+	}
+
+	@Test
+	void constructor_withBlankExpression_shouldThrowException() {
+		assertThatThrownBy(() -> new ExpressionField("", "alias"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Expression must not be null or blank");
+	}
 }

@@ -309,6 +309,54 @@ class ProcessorTest {
             assertThatThrownBy(() -> processor.process(context))
                     .isInstanceOf(RuntimeException.class);
         }
+
+        @Test
+        void process_nullFields_withExpressions_setsEmptyCols() {
+            ReadContext context = new ReadContext();
+            context.setRoot(usersTable);
+            context.setFields(null);
+            context.setExpressions(List.of(ExpressionField.count("*").as("total")));
+
+            processor.process(context);
+
+            assertThat(context.getCols()).isNotNull().isEmpty();
+        }
+
+        @Test
+        void process_nullFields_nullExpressions_doesNotSetColumns() {
+            ReadContext context = new ReadContext();
+            context.setRoot(usersTable);
+            context.setFields(null);
+            context.setExpressions(null);
+
+            processor.process(context);
+
+            assertThat(context.getCols()).isNull();
+        }
+
+        @Test
+        void process_nullFields_emptyExpressions_doesNotSetColumns() {
+            ReadContext context = new ReadContext();
+            context.setRoot(usersTable);
+            context.setFields(null);
+            context.setExpressions(List.of());
+
+            processor.process(context);
+
+            assertThat(context.getCols()).isNull();
+        }
+
+        @Test
+        void process_withFieldsAndExpressions_onlyProcessesFields() {
+            ReadContext context = new ReadContext();
+            context.setRoot(usersTable);
+            context.setFields("id,name");
+            context.setExpressions(List.of(ExpressionField.count("*").as("total")));
+
+            processor.process(context);
+
+            assertThat(context.getCols()).hasSize(2);
+        }
     }
 
     @Nested
@@ -984,6 +1032,21 @@ class ProcessorTest {
             processor.process(context);
 
             assertThat(context.getRootWhere()).isEqualTo("t0.deleted_at IS NULL");
+        }
+
+        @Test
+        void process_nullRoot_usesUnqualifiedColumn() throws DbException {
+            SoftDeleteProperties props = new SoftDeleteProperties(true, "deleted_at", List.of());
+            SoftDeleteProcessor processor = new SoftDeleteProcessor(props);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("test");
+            context.setTableName("users");
+            context.setRoot(null);
+
+            processor.process(context);
+
+            assertThat(context.getRootWhere()).isEqualTo("deleted_at IS NULL");
         }
     }
 }

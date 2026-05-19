@@ -6,6 +6,7 @@ import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbJoin;
 import dev.suprim.query.model.DbSort;
 import dev.suprim.query.model.DbTable;
+import dev.suprim.query.model.ExpressionField;
 import dev.suprim.query.model.context.CreateContext;
 import dev.suprim.query.model.context.DeleteContext;
 import dev.suprim.query.model.context.InsertableColumn;
@@ -212,6 +213,82 @@ class SqlCreatorTemplateTest {
 
             assertThat(sql).contains("LIMIT");
             assertThat(sql).doesNotContain("OFFSET");
+        }
+
+        @Test
+        void query_withExpressions_rendersExpressionsInSelect() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(USERS_TABLE.buildColumns());
+            ctx.setExpressions(List.of(ExpressionField.count("*").as("total")));
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).contains("COUNT(*)");
+            assertThat(sql).contains("AS \"total\"");
+        }
+
+        @Test
+        void query_expressionsOnly_rendersWithoutColumns() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(List.of());
+            ctx.setExpressions(List.of(
+                    ExpressionField.count("*").as("total"),
+                    ExpressionField.max("id").as("max_id")
+            ));
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).contains("COUNT(*)");
+            assertThat(sql).contains("MAX(\"id\")");
+            assertThat(sql).doesNotContain("u.\"id\"");
+        }
+
+        @Test
+        void query_nullExpressions_rendersColumnsOnly() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(USERS_TABLE.buildColumns());
+            ctx.setExpressions(null);
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).contains("SELECT");
+            assertThat(sql).contains("u.\"id\"");
+        }
+
+        @Test
+        void query_nullColumns_withExpressions_rendersExpressionsOnly() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(null);
+            ctx.setExpressions(List.of(ExpressionField.sum("id").as("total_id")));
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).contains("SUM(\"id\") AS \"total_id\"");
+            assertThat(sql).doesNotContain("u.\"id\"");
         }
     }
 
@@ -509,6 +586,104 @@ class SqlCreatorTemplateTest {
             assertThat(sql).contains("DELETE FROM");
             // Verify renderTableName was called with hasWhere=false
             verify(dialect).renderTableName(USERS_TABLE, false, true);
+        }
+    }
+
+    @Nested
+    @DisplayName("softDeleteQuery() - soft delete template")
+    class SoftDeleteQueryTests {
+
+        @Test
+        void softDeleteQuery_withAlias_rendersQualifiedColumn() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(dialect.currentTimestamp()).thenReturn("NOW()");
+            when(dialect.getUpdateSqlTemplate()).thenReturn("update");
+
+            DeleteContext ctx = DeleteContext.builder()
+                    .dbId("db1")
+                    .tableName("users")
+                    .table(USERS_TABLE)
+                    .build();
+            ctx.setWhere("u.\"id\" = :id");
+
+            String sql = sqlCreatorTemplate.softDeleteQuery(ctx, "deleted_at");
+
+            assertThat(sql).contains("UPDATE");
+            assertThat(sql).contains("SET");
+            assertThat(sql).contains("u.deleted_at = NOW()");
+        }
+
+        @Test
+        void softDeleteQuery_withoutAlias_rendersUnqualifiedColumn() throws DbException {
+            DbTable noAliasTable = new DbTable(
+                    "public", "users", "public.users", "",
+                    USERS_TABLE.dbColumns(), "TABLE", "\""
+            );
+
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.supportAlias()).thenReturn(false);
+            when(dialect.currentTimestamp()).thenReturn("NOW()");
+            when(dialect.getUpdateSqlTemplate()).thenReturn("update");
+
+            DeleteContext ctx = DeleteContext.builder()
+                    .dbId("db1")
+                    .tableName("users")
+                    .table(noAliasTable)
+                    .build();
+
+            String sql = sqlCreatorTemplate.softDeleteQuery(ctx, "deleted_at");
+
+            assertThat(sql).contains("UPDATE");
+            assertThat(sql).contains("deleted_at = NOW()");
+            assertThat(sql).doesNotContain(".deleted_at");
+        }
+
+        @Test
+        void softDeleteQuery_nullAlias_rendersUnqualifiedColumn() throws DbException {
+            DbTable nullAliasTable = new DbTable(
+                    "public", "users", "public.users", null,
+                    USERS_TABLE.dbColumns(), "TABLE", "\""
+            );
+
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.supportAlias()).thenReturn(true);
+            when(dialect.currentTimestamp()).thenReturn("CURRENT_TIMESTAMP");
+            when(dialect.getUpdateSqlTemplate()).thenReturn("update");
+
+            DeleteContext ctx = DeleteContext.builder()
+                    .dbId("db1")
+                    .tableName("users")
+                    .table(nullAliasTable)
+                    .build();
+
+            String sql = sqlCreatorTemplate.softDeleteQuery(ctx, "deleted_at");
+
+            assertThat(sql).contains("deleted_at = CURRENT_TIMESTAMP");
+        }
+    }
+
+    @Nested
+    @DisplayName("upsert() - upsert template")
+    class UpsertTests {
+
+        @Test
+        void upsert_rendersInsertWithOnConflict() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getUpsertSqlTemplate()).thenReturn("upsert");
+
+            CreateContext ctx = new CreateContext(
+                    "db1",
+                    USERS_TABLE,
+                    List.of("name", "email"),
+                    List.of(new InsertableColumn("name", null), new InsertableColumn("email", null))
+            );
+
+            String sql = sqlCreatorTemplate.upsert(ctx, "ON CONFLICT (\"id\") DO UPDATE SET \"name\" = EXCLUDED.\"name\"");
+
+            assertThat(sql).contains("INSERT INTO");
+            assertThat(sql).contains("ON CONFLICT");
+            assertThat(sql).contains("DO UPDATE SET");
         }
     }
 

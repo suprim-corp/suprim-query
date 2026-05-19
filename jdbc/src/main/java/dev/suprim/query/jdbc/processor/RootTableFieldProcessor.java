@@ -3,6 +3,7 @@ package dev.suprim.query.jdbc.processor;
 import dev.suprim.query.exception.DbException;
 import dev.suprim.query.exception.DbRuntimeException;
 import dev.suprim.query.model.DbColumn;
+import dev.suprim.query.model.ExpressionField;
 import dev.suprim.query.model.context.ReadContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
@@ -12,6 +13,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static java.util.Objects.isNull;
+import static java.util.Objects.nonNull;
 
 @Slf4j
 @Order(4)
@@ -24,7 +26,12 @@ public class RootTableFieldProcessor implements ReadProcessor {
         log.debug("Fields - {}", fields);
 
         if (isNull(fields)) {
-            // Most likely a count query
+            // If expressions are present, set empty cols for pure aggregation query.
+            // Otherwise, skip (count query).
+            List<ExpressionField> expressions = readContext.getExpressions();
+            if (nonNull(expressions) && !expressions.isEmpty()) {
+                readContext.setCols(List.of());
+            }
             return;
         }
 

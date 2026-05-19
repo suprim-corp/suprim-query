@@ -29,6 +29,8 @@ public class ReadContext {
     List<JoinDetail> joins;
     int defaultFetchLimit;
     boolean includeSoftDeleted;
+    @Builder.Default
+    List<ExpressionField> expressions = List.of();
 
     // Derived attributes
     DbTable root;

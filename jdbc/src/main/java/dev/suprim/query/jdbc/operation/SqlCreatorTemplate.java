@@ -6,6 +6,7 @@ import dev.suprim.query.exception.DbException;
 import dev.suprim.query.model.DbColumn;
 import dev.suprim.query.model.DbSort;
 import dev.suprim.query.model.DbTable;
+import dev.suprim.query.model.ExpressionField;
 import dev.suprim.query.model.context.CreateContext;
 import dev.suprim.query.model.context.DeleteContext;
 import dev.suprim.query.model.context.ReadContext;
@@ -19,6 +20,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
@@ -124,7 +128,7 @@ public record SqlCreatorTemplate(
 
     public String findOne(ReadContext readContext) throws DbException {
         Map<String, Object> params = new HashMap<>();
-        params.put("columns", projections(readContext.getCols()));
+        params.put("columns", projections(readContext.getCols(), readContext.getExpressions()));
         params.put("rootTable", readContext.getRoot().render());
         params.put("rootWhere", readContext.getRootWhere());
 
@@ -160,7 +164,7 @@ public record SqlCreatorTemplate(
         log.debug("**** Preparing to render ****");
 
         Map<String, Object> params = new HashMap<>();
-        params.put("columns", projections(readContext.getCols()));
+        params.put("columns", projections(readContext.getCols(), readContext.getExpressions()));
         params.put("rootTable", readContext.getRoot().render());
         params.put("rootWhere", readContext.getRootWhere());
         params.put("joins", readContext.getDbJoins());
@@ -207,12 +211,21 @@ public record SqlCreatorTemplate(
         return output.toString();
     }
 
-    private String projections(List<DbColumn> columns) {
-        List<String> columList = columns.stream()
-                .map(DbColumn::renderWithAlias)
-                .toList();
-
-        return String.join("\n\t,", columList);
+    private String projections(
+            List<DbColumn> columns,
+            List<ExpressionField> expressions
+    ) {
+        return Stream.concat(
+                             Optional.ofNullable(columns)
+                                     .orElse(List.of())
+                                     .stream()
+                                     .map(DbColumn::renderWithAlias),
+                             Optional.ofNullable(expressions)
+                                     .orElse(List.of())
+                                     .stream()
+                                     .map(ExpressionField::renderWithAlias)
+                     )
+                     .collect(Collectors.joining("\n\t,"));
     }
 
     private String orderBy(List<DbSort> sorts) {

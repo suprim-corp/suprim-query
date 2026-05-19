@@ -633,4 +633,145 @@ class ExpressionFieldTest {
 
 		assertThat(expr.renderWithAlias()).isEqualTo("EXTRACT(MONTH FROM \"created_at\") AS \"birth_month\"");
 	}
+
+	// === concat() ===
+
+	@Test
+	void concat_withMultipleArgs_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.concat("first_name", "' '", "last_name");
+
+		assertThat(expr.expression()).isEqualTo("CONCAT(first_name, ' ', last_name)");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void concat_withSingleArg_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.concat("u.name");
+
+		assertThat(expr.expression()).isEqualTo("CONCAT(u.name)");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void concat_withTwoArgs_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.concat("u.first_name", "u.last_name");
+
+		assertThat(expr.expression()).isEqualTo("CONCAT(u.first_name, u.last_name)");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void concat_withNull_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.concat((String[]) null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Arguments must not be null or empty");
+	}
+
+	@Test
+	void concat_withEmptyArray_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.concat())
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Arguments must not be null or empty");
+	}
+
+	@Test
+	void concat_withNullElement_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.concat("a.value", null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Argument at index 1 must not be null or blank");
+	}
+
+	@Test
+	void concat_withBlankElement_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.concat("a.value", "  "))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Argument at index 1 must not be null or blank");
+	}
+
+	@Test
+	void concat_withEmptyElement_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.concat(""))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Argument at index 0 must not be null or blank");
+	}
+
+	@Test
+	void concat_withAlias_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.concat("first_name", "' '", "last_name").as("full_name");
+
+		assertThat(expr.renderWithAlias()).isEqualTo("CONCAT(first_name, ' ', last_name) AS \"full_name\"");
+	}
+
+	// === toChar() ===
+
+	@Test
+	void toChar_shouldQuoteColumnAndWrapFormat() {
+		ExpressionField expr = ExpressionField.toChar("created_at", "YYYY-MM-DD");
+
+		assertThat(expr.expression()).isEqualTo("TO_CHAR(\"created_at\", 'YYYY-MM-DD')");
+		assertThat(expr.alias()).isNull();
+	}
+
+	@Test
+	void toChar_withTimeFormat_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.toChar("logged_at", "HH24:MI:SS");
+
+		assertThat(expr.expression()).isEqualTo("TO_CHAR(\"logged_at\", 'HH24:MI:SS')");
+	}
+
+	@Test
+	void toChar_withFullTimestampFormat_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.toChar("event_time", "YYYY-MM-DD HH24:MI:SS");
+
+		assertThat(expr.expression()).isEqualTo("TO_CHAR(\"event_time\", 'YYYY-MM-DD HH24:MI:SS')");
+	}
+
+	@Test
+	void toChar_withNullColumn_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.toChar(null, "YYYY-MM-DD"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Column must not be null or blank");
+	}
+
+	@Test
+	void toChar_withBlankColumn_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.toChar("  ", "YYYY-MM-DD"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Column must not be null or blank");
+	}
+
+	@Test
+	void toChar_withEmptyColumn_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.toChar("", "YYYY-MM-DD"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Column must not be null or blank");
+	}
+
+	@Test
+	void toChar_withNullFormat_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.toChar("created_at", null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Format must not be null or blank");
+	}
+
+	@Test
+	void toChar_withBlankFormat_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.toChar("created_at", "  "))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Format must not be null or blank");
+	}
+
+	@Test
+	void toChar_withEmptyFormat_shouldThrowException() {
+		assertThatThrownBy(() -> ExpressionField.toChar("created_at", ""))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Format must not be null or blank");
+	}
+
+	@Test
+	void toChar_withAlias_shouldRenderCorrectly() {
+		ExpressionField expr = ExpressionField.toChar("created_at", "YYYY-MM-DD").as("date_str");
+
+		assertThat(expr.renderWithAlias()).isEqualTo("TO_CHAR(\"created_at\", 'YYYY-MM-DD') AS \"date_str\"");
+	}
 }

@@ -139,6 +139,43 @@ public record ExpressionField(String expression, String alias) {
 	}
 
 	/**
+	 * Creates a CONCAT expression from the given arguments.
+	 * Arguments are rendered as-is (no quoting) — user handles quoting.
+	 * Renders as: {@code CONCAT(arg1, arg2, ...)}.
+	 *
+	 * @param args the arguments to CONCAT
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField concat(String... args) {
+		if (isNull(args) || args.length == 0) {
+			throw new IllegalArgumentException("Arguments must not be null or empty");
+		}
+		for (int i = 0; i < args.length; i++) {
+			if (isNull(args[i]) || args[i].isBlank()) {
+				throw new IllegalArgumentException("Argument at index " + i + " must not be null or blank");
+			}
+		}
+		return new ExpressionField("CONCAT(" + String.join(", ", args) + ")", null);
+	}
+
+	/**
+	 * Creates a TO_CHAR expression.
+	 * Column is auto-quoted with double quotes, format is auto-wrapped with single quotes.
+	 * Renders as: {@code TO_CHAR("column", 'format')}.
+	 *
+	 * @param column the column name
+	 * @param format the format string (e.g. YYYY-MM-DD, HH24:MI:SS)
+	 * @return a new ExpressionField with no alias
+	 */
+	public static ExpressionField toChar(String column, String format) {
+		validateColumn(column);
+		if (isNull(format) || format.isBlank()) {
+			throw new IllegalArgumentException("Format must not be null or blank");
+		}
+		return new ExpressionField("TO_CHAR(" + quoteColumn(column) + ", '" + format.strip() + "')", null);
+	}
+
+	/**
 	 * Creates a DATE_TRUNC expression.
 	 * Precision is auto-wrapped with single quotes, column is auto-quoted with double quotes.
 	 * Renders as: {@code DATE_TRUNC('precision', "column")}.

@@ -4,6 +4,7 @@ import dev.suprim.query.dialect.Dialect;
 import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
 import dev.suprim.query.exception.DbRuntimeException;
+import dev.suprim.query.jdbc.config.DataSourceMetadataConfig;
 import dev.suprim.query.jdbc.config.DatabaseConnectionDetail;
 import dev.suprim.query.jdbc.config.DatabaseProperties;
 import dev.suprim.query.jdbc.config.DbDetailHolder;
@@ -13,7 +14,6 @@ import dev.suprim.query.model.DbMeta;
 import dev.suprim.query.model.DbTable;
 import dev.suprim.query.support.MetaDataExtraction;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.JdbcTransactionManager;
@@ -29,15 +29,44 @@ import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
 @Slf4j
-@RequiredArgsConstructor
 public final class JdbcManager {
     private final DataSource dataSource;
     private final List<Dialect> availableDialects;
     private final DatabaseProperties databaseProperties;
     private final List<MetaDataExtraction> metaDataExtractions;
+    private final Map<String, DataSourceMetadataConfig> metadataConfigMap;
     private final Map<String, DbDetailHolder> dbDetailHolderMap = new ConcurrentHashMap<>();
     private final Map<String, NamedParameterJdbcTemplate> namedParameterJdbcTemplateMap = new ConcurrentHashMap<>();
     private final Map<String, TransactionTemplate> transactionTemplateMap = new ConcurrentHashMap<>();
+
+    /**
+     * Original constructor — backward compatible. No metadata config map (uses DatabaseConnectionDetail).
+     */
+    public JdbcManager(
+            DataSource dataSource,
+            List<Dialect> availableDialects,
+            DatabaseProperties databaseProperties,
+            List<MetaDataExtraction> metaDataExtractions
+    ) {
+        this(dataSource, availableDialects, databaseProperties, metaDataExtractions, Map.of());
+    }
+
+    /**
+     * Full constructor with metadata config map for auto-detected datasources.
+     */
+    public JdbcManager(
+            DataSource dataSource,
+            List<Dialect> availableDialects,
+            DatabaseProperties databaseProperties,
+            List<MetaDataExtraction> metaDataExtractions,
+            Map<String, DataSourceMetadataConfig> metadataConfigMap
+    ) {
+        this.dataSource = dataSource;
+        this.availableDialects = availableDialects;
+        this.databaseProperties = databaseProperties;
+        this.metaDataExtractions = metaDataExtractions;
+        this.metadataConfigMap = metadataConfigMap;
+    }
 
     @PostConstruct
     public void reload() {
@@ -48,8 +77,11 @@ public final class JdbcManager {
             // Allow the ApplicationContext to start with degraded state.
             // Metadata will be absent until the next reload() call or first request triggers it.
             // This prevents a transient DB outage at startup from killing the whole application.
-            log.error("Failed to load DB metadata at startup — tables will not be available " +
-                      "until DB is reachable and reload() is called again. Cause: {}", e.getMessage());
+            log.error(
+                    "Failed to load DB metadata at startup — tables will not be available " +
+                    "until DB is reachable and reload() is called again. Cause: {}",
+                    e.getMessage()
+            );
         }
     }
 
@@ -95,26 +127,32 @@ public final class JdbcManager {
 
         for (Object dbId : dataSourceMap.keySet()) {
             DataSource ds = dataSourceMap.get(dbId);
-            DatabaseConnectionDetail databaseConnectionDetail = null;
-            Optional<DatabaseConnectionDetail> connectionDetail = databaseProperties.getDatabase((String) dbId);
+            String dbIdStr = (String) dbId;
 
+            // Resolve schema config: DatabaseConnectionDetail (explicit) > DataSourceMetadataConfig (auto-detect)
+            DatabaseConnectionDetail databaseConnectionDetail = null;
+            DataSourceMetadataConfig metadataConfig = null;
+
+            Optional<DatabaseConnectionDetail> connectionDetail = databaseProperties.getDatabase(dbIdStr);
             if (connectionDetail.isPresent()) {
                 databaseConnectionDetail = connectionDetail.get();
+            } else {
+                metadataConfig = metadataConfigMap.get(dbIdStr);
             }
 
-            log.debug("Database connection details - {}", databaseConnectionDetail);
+            log.debug("Database connection details - {}, metadata config - {}", databaseConnectionDetail, metadataConfig);
 
-            loadMetaData((String) dbId, ds, databaseConnectionDetail);
+            loadMetaData(dbIdStr, ds, databaseConnectionDetail, metadataConfig);
 
             namedParameterJdbcTemplateMap.put(
-                    (String) dbId,
+                    dbIdStr,
                     new NamedParameterJdbcTemplate(ds)
             );
 
             JdbcTransactionManager jdbcTransactionManager = new JdbcTransactionManager(ds);
 
             transactionTemplateMap.put(
-                    (String) dbId,
+                    dbIdStr,
                     new TransactionTemplate(jdbcTransactionManager)
             );
         }
@@ -123,23 +161,27 @@ public final class JdbcManager {
     private void loadMetaData(
             String dbId,
             DataSource ds,
-            DatabaseConnectionDetail databaseConnectionDetail
+            DatabaseConnectionDetail databaseConnectionDetail,
+            DataSourceMetadataConfig metadataConfig
     ) {
         log.debug("Loading meta data - {}", ds);
         try {
             Map<String, DbTable> dbTableMap = new ConcurrentHashMap<>();
 
-            // assume database connection detail as null
+            // Resolve schema filtering: explicit config > metadata config > default (all schemas)
             boolean includeAllSchemas = true;
             List<String> schemas = null;
 
             if (nonNull(databaseConnectionDetail)) {
                 includeAllSchemas = databaseConnectionDetail.includeAllSchemas();
                 schemas = databaseConnectionDetail.schemas();
-
-                log.info("Include all schemas - {}", includeAllSchemas);
-                log.info("Schemas - {}", schemas);
+            } else if (nonNull(metadataConfig)) {
+                includeAllSchemas = metadataConfig.includeAllSchemas();
+                schemas = metadataConfig.schemas();
             }
+
+            log.info("Include all schemas - {}", includeAllSchemas);
+            log.info("Schemas - {}", schemas);
 
             JdbcMetaDataProvider metaDataProvider = new JdbcMetaDataProvider(includeAllSchemas, schemas);
             metaDataExtractions.forEach(metaDataProvider::addExtraction);

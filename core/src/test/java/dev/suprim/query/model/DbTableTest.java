@@ -251,6 +251,30 @@ class DbTableTest {
     }
 
     @Test
+    void buildColumn_withTrailingArrow_shouldProduceEmptyKey() throws DbException {
+        DbColumn result = JSONB_TABLE.buildColumn("data->");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->''");
+    }
+
+    @Test
+    void buildColumn_withTrailingDashAfterKey_shouldIncludeDashInKey() throws DbException {
+        DbColumn result = JSONB_TABLE.buildColumn("data->name-");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->'name-'");
+    }
+
+    @Test
+    void buildColumn_withTrailingCharsAfterQuotedKey_shouldStopParsing() throws DbException {
+        DbColumn result = JSONB_TABLE.buildColumn("data->'x'z");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->'x'");
+    }
+
+    @Test
     void buildColumns_shouldReturnAllColumns() {
         DbColumn col1 = createColumn("id", true);
         DbColumn col2 = createColumn("name", false);

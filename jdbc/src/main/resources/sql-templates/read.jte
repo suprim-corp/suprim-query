@@ -5,6 +5,7 @@
 @param String rootTable
 @param String columns
 @param String rootWhere
+@param String groupBy
 @param String sorts
 @param Integer limit
 @param Long offset
@@ -20,6 +21,9 @@ FROM
 @endif
 @if(rootWhere != null)
     WHERE ${rootWhere}
+@endif
+@if(groupBy != null)
+    GROUP BY ${groupBy}
 @endif
 @if(sorts != null)
     ORDER BY ${sorts}

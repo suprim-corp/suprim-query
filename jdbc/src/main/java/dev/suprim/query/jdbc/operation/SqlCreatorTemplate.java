@@ -169,6 +169,10 @@ public record SqlCreatorTemplate(
         params.put("rootWhere", readContext.getRootWhere());
         params.put("joins", readContext.getDbJoins());
 
+        if (nonNull(readContext.getGroupBys()) && !readContext.getGroupBys().isEmpty()) {
+            params.put("groupBy", String.join(", ", readContext.getGroupBys()));
+        }
+
         if (nonNull(readContext.getDbSortList()) && !readContext.getDbSortList().isEmpty()) {
             params.put("sorts", orderBy(readContext.getDbSortList()));
         }

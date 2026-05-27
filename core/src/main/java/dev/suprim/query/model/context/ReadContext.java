@@ -31,6 +31,8 @@ public class ReadContext {
     boolean includeSoftDeleted;
     @Builder.Default
     List<ExpressionField> expressions = List.of();
+    @Builder.Default
+    List<String> groupBys = List.of();
 
     // Derived attributes
     DbTable root;

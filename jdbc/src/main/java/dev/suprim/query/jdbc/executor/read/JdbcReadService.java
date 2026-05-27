@@ -7,21 +7,26 @@ import dev.suprim.query.jdbc.operation.DbOperationService;
 import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.jdbc.operation.SqlCreatorTemplate;
 import dev.suprim.query.jdbc.processor.ReadProcessor;
+import dev.suprim.query.mapping.ResultMapper;
 import dev.suprim.query.model.context.ReadContext;
 import dev.suprim.query.model.dto.Page;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
+@Builder
 public record JdbcReadService(
         JdbcManager jdbcManager,
         DbOperationService dbOperationService,
         List<ReadProcessor> processorList,
-        SqlCreatorTemplate sqlCreatorTemplate
+        SqlCreatorTemplate sqlCreatorTemplate,
+        ResultMapper resultMapper
 ) implements ReadService {
 
     @Override
@@ -34,8 +39,10 @@ public record JdbcReadService(
             }
 
             String sql = sqlCreatorTemplate.query(readContext);
+
             log.debug("{}", sql);
             log.debug("{}", readContext.getParamMap());
+
             return dbOperationService.read(
                     jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
                     readContext.getParamMap(),
@@ -105,7 +112,7 @@ public record JdbcReadService(
     }
 
     @Override
-    public Page findPage(ReadContext readContext) throws DbException {
+    public Page<Map<String, Object>> findPage(ReadContext readContext) throws DbException {
         // Run processors once — they mutate the context (paramMap, cols, rootWhere, etc.)
         for (ReadProcessor processor : processorList) {
             processor.process(readContext);
@@ -124,7 +131,7 @@ public record JdbcReadService(
         log.debug("findPage count SQL: {}", countSql);
 
         // Wrap data + count in a single transaction for consistency
-        Page page = jdbcManager.getTxnTemplate(readContext.getDbId()).execute(status -> {
+        Page<Map<String, Object>> page = jdbcManager.getTxnTemplate(readContext.getDbId()).execute(status -> {
             try {
                 List<Map<String, Object>> data = dbOperationService.read(
                         jdbcManager.getNamedParameterJdbcTemplate(readContext.getDbId()),
@@ -144,7 +151,7 @@ public record JdbcReadService(
                 long offset = readContext.getOffset();
                 boolean hasNext = (offset + data.size()) < total;
 
-                return Page.builder()
+                return Page.<Map<String, Object>>builder()
                            .data(List.copyOf(data))
                            .total(total)
                            .limit(effectiveLimit)
@@ -161,5 +168,39 @@ public record JdbcReadService(
         }
 
         return page;
+    }
+
+    @Override
+    public <T> List<T> findAll(
+            ReadContext readContext,
+            Class<T> type
+    ) throws DbException {
+        List<Map<String, Object>> rows = findAll(readContext);
+        return resultMapper.mapList(rows, type);
+    }
+
+    @Override
+    public <T> Optional<T> findOne(
+            ReadContext readContext,
+            Class<T> type
+    ) throws DbException {
+        Map<String, Object> row = findOne(readContext);
+        return resultMapper.mapOptional(row, type);
+    }
+
+    @Override
+    public <T> Page<T> findPage(
+            ReadContext readContext,
+            Class<T> type
+    ) throws DbException {
+        Page<Map<String, Object>> rawPage = findPage(readContext);
+        List<T> mappedData = resultMapper.mapList(rawPage.data(), type);
+        return Page.<T>builder()
+                   .data(mappedData)
+                   .total(rawPage.total())
+                   .limit(rawPage.limit())
+                   .offset(rawPage.offset())
+                   .hasNext(rawPage.hasNext())
+                   .build();
     }
 }

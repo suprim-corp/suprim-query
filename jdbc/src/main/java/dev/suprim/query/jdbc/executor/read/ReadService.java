@@ -6,6 +6,7 @@ import dev.suprim.query.model.dto.Page;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public interface ReadService {
     List<Map<String, Object>> findAll(ReadContext readContext) throws DbException;
@@ -14,5 +15,11 @@ public interface ReadService {
 
     long count(ReadContext readContext) throws DbException;
 
-    Page findPage(ReadContext readContext) throws DbException;
+    Page<Map<String, Object>> findPage(ReadContext readContext) throws DbException;
+
+    <T> List<T> findAll(ReadContext readContext, Class<T> type) throws DbException;
+
+    <T> Optional<T> findOne(ReadContext readContext, Class<T> type) throws DbException;
+
+    <T> Page<T> findPage(ReadContext readContext, Class<T> type) throws DbException;
 }

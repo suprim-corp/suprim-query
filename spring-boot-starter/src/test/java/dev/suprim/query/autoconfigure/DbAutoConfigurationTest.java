@@ -360,7 +360,7 @@ class DbAutoConfigurationTest {
         SqlCreatorTemplate sqlCreatorTemplate = config.sqlCreatorTemplate(templateEngine, jdbcManager);
         DbOperationService dbOperationService = config.dbOperationService();
 
-        ReadService service = config.readService(jdbcManager, sqlCreatorTemplate, List.of(), dbOperationService);
+        ReadService service = config.readService(jdbcManager, sqlCreatorTemplate, List.of(), dbOperationService, config.resultMapper());
 
         assertThat(service).isNotNull();
     }

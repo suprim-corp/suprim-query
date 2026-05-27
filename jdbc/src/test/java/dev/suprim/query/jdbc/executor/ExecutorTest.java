@@ -22,6 +22,7 @@ import dev.suprim.query.model.context.ReadContext;
 import dev.suprim.query.model.dto.BulkUpdate;
 import dev.suprim.query.model.dto.CountResponse;
 import dev.suprim.query.model.dto.CreationResponse;
+import dev.suprim.query.mapping.ResultMapper;
 import dev.suprim.query.model.dto.Page;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -543,7 +544,7 @@ class ExecutorTest {
 
         @BeforeEach
         void setup() {
-            readService = new JdbcReadService(jdbcManager, dbOperationService, List.of(), sqlCreatorTemplate);
+            readService = new JdbcReadService(jdbcManager, dbOperationService, List.of(), sqlCreatorTemplate, new ResultMapper());
         }
 
         @Test
@@ -682,7 +683,7 @@ class ExecutorTest {
         @Test
         void findOne_withProcessors_callsProcessors() throws DbException {
             ReadProcessor processor = mock(ReadProcessor.class);
-            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate, new ResultMapper());
 
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(sqlCreatorTemplate.findOne(any(ReadContext.class))).thenReturn("SELECT * FROM users LIMIT 1");
@@ -702,7 +703,7 @@ class ExecutorTest {
         @Test
         void count_withProcessors_callsProcessors() throws DbException {
             ReadProcessor processor = mock(ReadProcessor.class);
-            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate, new ResultMapper());
 
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(sqlCreatorTemplate.count(any(ReadContext.class))).thenReturn("SELECT COUNT(*) FROM users");
@@ -722,7 +723,7 @@ class ExecutorTest {
         @Test
         void findAll_withProcessors_callsProcessors() throws DbException {
             ReadProcessor processor = mock(ReadProcessor.class);
-            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate, new ResultMapper());
 
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
@@ -761,7 +762,7 @@ class ExecutorTest {
             context.setOffset(0);
             context.setParamMap(new HashMap<>());
 
-            Page result = readService.findPage(context);
+            Page<Map<String, Object>> result = readService.findPage(context);
 
             assertThat(result.data()).hasSize(2);
             assertThat(result.total()).isEqualTo(25);
@@ -792,7 +793,7 @@ class ExecutorTest {
             context.setOffset(20);
             context.setParamMap(new HashMap<>());
 
-            Page result = readService.findPage(context);
+            Page<Map<String, Object>> result = readService.findPage(context);
 
             assertThat(result.data()).hasSize(2);
             assertThat(result.total()).isEqualTo(22);
@@ -821,7 +822,7 @@ class ExecutorTest {
             context.setOffset(0);
             context.setParamMap(new HashMap<>());
 
-            Page result = readService.findPage(context);
+            Page<Map<String, Object>> result = readService.findPage(context);
 
             assertThat(result.data()).isEmpty();
             assertThat(result.total()).isZero();
@@ -864,7 +865,7 @@ class ExecutorTest {
             context.setDefaultFetchLimit(50);
             context.setParamMap(new HashMap<>());
 
-            Page result = readService.findPage(context);
+            Page<Map<String, Object>> result = readService.findPage(context);
 
             assertThat(result.limit()).isEqualTo(50);
             assertThat(result.hasNext()).isTrue();
@@ -893,7 +894,7 @@ class ExecutorTest {
             context.setDefaultFetchLimit(25);
             context.setParamMap(new HashMap<>());
 
-            Page result = readService.findPage(context);
+            Page<Map<String, Object>> result = readService.findPage(context);
 
             assertThat(result.limit()).isEqualTo(25);
         }
@@ -901,7 +902,7 @@ class ExecutorTest {
         @Test
         void findPage_processorsCalledOnce() throws DbException {
             ReadProcessor processor = mock(ReadProcessor.class);
-            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate);
+            JdbcReadService serviceWithProcessors = new JdbcReadService(jdbcManager, dbOperationService, List.of(processor), sqlCreatorTemplate, new ResultMapper());
 
             when(jdbcManager.getNamedParameterJdbcTemplate("test")).thenReturn(namedParameterJdbcTemplate);
             when(jdbcManager.getDialect("test")).thenReturn(dialect);
@@ -953,7 +954,7 @@ class ExecutorTest {
             context.setOffset(0);
             context.setParamMap(new HashMap<>());
 
-            Page result = readService.findPage(context);
+            Page<Map<String, Object>> result = readService.findPage(context);
 
             assertThatThrownBy(() -> result.data().add(Map.of("id", 2L)))
                     .isInstanceOf(UnsupportedOperationException.class);

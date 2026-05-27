@@ -77,8 +77,8 @@ public record DbTable(
 	 *
 	 * @see DbAlias
 	 */
-	private DbAlias getAlias(String name) {
-		String[] aliasParts = name.split(":");
+	private DbAlias getAlias(String fieldExpression) throws DbException {
+		String[] aliasParts = fieldExpression.split(":", 2);
 		String columnName = aliasParts[0];
 		String colName = columnName;
 		String jsonParts = "";
@@ -107,6 +107,7 @@ public record DbTable(
 			int index = columnName.indexOf("**");
 			colName = columnName.substring(0, index);
 			String remainder = columnName.substring(index + 2);
+			validateNotBlank(remainder, fieldExpression);
 			String[] segments = remainder.split("\\*\\*");
 			StringBuilder sb = new StringBuilder();
 			for (int i = 0; i < segments.length; i++) {
@@ -124,6 +125,7 @@ public record DbTable(
 			int index = columnName.indexOf("*");
 			colName = columnName.substring(0, index);
 			String remainder = columnName.substring(index + 1);
+			validateNotBlank(remainder, fieldExpression);
 			String[] segments = remainder.split("\\*");
 			StringBuilder sb = new StringBuilder();
 			for (String segment : segments) {
@@ -136,6 +138,13 @@ public record DbTable(
 		return new DbAlias(colName.trim(), alias.trim(), jsonParts);
 	}
 
+	private void validateNotBlank(String remainder, String expression) throws DbException {
+		if (remainder.isBlank()) {
+			throw new DbException(DbErrorCode.INVALID_REQUEST,
+					"Invalid JSONB path expression: trailing delimiter in '%s'".formatted(expression));
+		}
+	}
+
 	/**
 	 * Parses chained arrow operators ({@code ->} and {@code ->>}) from a field expression.
 	 * Walks the expression left-to-right, consuming each operator and its key.
@@ -143,7 +152,7 @@ public record DbTable(
 	 *
 	 * <p>Example: {@code data->feedback->>type} → {@code ->'feedback'->>'type'}
 	 */
-	private String parseChainedArrows(String expression) {
+	private String parseChainedArrows(String expression) throws DbException {
 		StringBuilder result = new StringBuilder();
 		int firstOp = expression.indexOf("->");
 		if (firstOp == -1) {
@@ -184,14 +193,15 @@ public record DbTable(
 	 *   <li>Unquoted: {@code feedback} — reads until next {@code ->} or end of string</li>
 	 * </ul>
 	 */
-	private String extractKey(String expression, int start) {
+	private String extractKey(String expression, int start) throws DbException {
 		if (start >= expression.length()) {
 			return "";
 		}
 		if (expression.charAt(start) == '\'') {
 			int end = expression.indexOf('\'', start + 1);
 			if (end == -1) {
-				return expression.substring(start);
+				throw new DbException(DbErrorCode.INVALID_REQUEST,
+						"Unclosed quote in JSONB path expression: '%s'".formatted(expression));
 			}
 			return expression.substring(start, end + 1);
 		}

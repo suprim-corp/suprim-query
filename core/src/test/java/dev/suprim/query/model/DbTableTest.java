@@ -227,6 +227,47 @@ class DbTableTest {
     }
 
     @Test
+    void buildColumn_withTrailingDoubleAsterisk_shouldThrowDbException() {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        assertThatThrownBy(() -> table.buildColumn("data**"))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("trailing delimiter");
+    }
+
+    @Test
+    void buildColumn_withTrailingSingleAsterisk_shouldThrowDbException() {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        assertThatThrownBy(() -> table.buildColumn("data*"))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("trailing delimiter");
+    }
+
+    @Test
+    void buildColumn_withUnclosedQuote_shouldThrowDbException() {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        assertThatThrownBy(() -> table.buildColumn("data->'feedback"))
+                .isInstanceOf(DbException.class)
+                .hasMessageContaining("Unclosed quote");
+    }
+
+    @Test
+    void buildColumn_withMultipleColons_shouldUseFirstColonOnly() throws DbException {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("data->>name:alias:extra");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.alias()).isEqualTo("alias:extra");
+    }
+
+    @Test
     void buildColumns_shouldReturnAllColumns() {
         DbColumn col1 = createColumn("id", true);
         DbColumn col2 = createColumn("name", false);

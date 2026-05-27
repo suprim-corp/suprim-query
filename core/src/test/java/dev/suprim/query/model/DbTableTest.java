@@ -61,7 +61,7 @@ class DbTableTest {
         DbColumn result = table.buildColumn("data->>name");
 
         assertThat(result.name()).isEqualTo("data");
-        assertThat(result.jsonParts()).isEqualTo("->>name");
+        assertThat(result.jsonParts()).isEqualTo("->>'name'");
     }
 
     @Test
@@ -72,7 +72,7 @@ class DbTableTest {
         DbColumn result = table.buildColumn("data->nested");
 
         assertThat(result.name()).isEqualTo("data");
-        assertThat(result.jsonParts()).isEqualTo("->nested");
+        assertThat(result.jsonParts()).isEqualTo("->'nested'");
     }
 
     @Test
@@ -83,7 +83,7 @@ class DbTableTest {
         DbColumn result = table.buildColumn("data#>>nested.field");
 
         assertThat(result.name()).isEqualTo("data");
-        assertThat(result.jsonParts()).isEqualTo("#>>nested,field");
+        assertThat(result.jsonParts()).isEqualTo("#>>'{nested,field}'");
     }
 
     @Test
@@ -94,7 +94,7 @@ class DbTableTest {
         DbColumn result = table.buildColumn("data#>nested.field");
 
         assertThat(result.name()).isEqualTo("data");
-        assertThat(result.jsonParts()).isEqualTo("#>nested,field");
+        assertThat(result.jsonParts()).isEqualTo("#>'{nested,field}'");
     }
 
     @Test
@@ -144,6 +144,86 @@ class DbTableTest {
         assertThatThrownBy(() -> table.buildColumn("nonexistent"))
                 .isInstanceOf(DbException.class)
                 .hasMessageContaining("Column not found: users.nonexistent");
+    }
+
+    // --- Multi-level JSONB path tests ---
+
+    @Test
+    void buildColumn_withMultiLevelArrow_shouldParseChainedOperators() throws DbException {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("data->'feedback'->>'type'");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->'feedback'->>'type'");
+    }
+
+    @Test
+    void buildColumn_withMultiLevelUnquotedArrow_shouldAutoQuoteKeys() throws DbException {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("data->feedback->>type");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->'feedback'->>'type'");
+    }
+
+    @Test
+    void buildColumn_withThreeLevelArrow_shouldParseAllLevels() throws DbException {
+        DbColumn col = createColumn("meta", false);
+        DbTable table = new DbTable("public", "events", "public.events", "e", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("meta->config->settings->>theme");
+
+        assertThat(result.name()).isEqualTo("meta");
+        assertThat(result.jsonParts()).isEqualTo("->'config'->'settings'->>'theme'");
+    }
+
+    @Test
+    void buildColumn_withMultiLevelDoubleAsterisk_shouldChainTextExtraction() throws DbException {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("data**feedback**type");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->'feedback'->>'type'");
+    }
+
+    @Test
+    void buildColumn_withMultiLevelSingleAsterisk_shouldChainObjectExtraction() throws DbException {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("data*feedback*type");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->'feedback'->'type'");
+    }
+
+    @Test
+    void buildColumn_withMultiLevelHashPath_shouldProducePostgresPathArray() throws DbException {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("data#>>feedback.type.value");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("#>>'{feedback,type,value}'");
+    }
+
+    @Test
+    void buildColumn_withMultiLevelArrowAndAlias_shouldSetAlias() throws DbException {
+        DbColumn col = createColumn("data", false);
+        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
+
+        DbColumn result = table.buildColumn("data->feedback->>type:feedback_type");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.alias()).isEqualTo("feedback_type");
+        assertThat(result.jsonParts()).isEqualTo("->'feedback'->>'type'");
     }
 
     @Test

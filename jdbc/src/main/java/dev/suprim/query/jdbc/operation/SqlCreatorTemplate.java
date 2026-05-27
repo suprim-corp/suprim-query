@@ -169,6 +169,12 @@ public record SqlCreatorTemplate(
         params.put("rootWhere", readContext.getRootWhere());
         params.put("joins", readContext.getDbJoins());
 
+        // SECURITY: groupBys must contain validated column refs only — never raw user input
+        // null possible when constructed via no-arg constructor + setter
+        if (nonNull(readContext.getGroupBys()) && !readContext.getGroupBys().isEmpty()) {
+            params.put("groupBy", String.join(", ", readContext.getGroupBys()));
+        }
+
         if (nonNull(readContext.getDbSortList()) && !readContext.getDbSortList().isEmpty()) {
             params.put("sorts", orderBy(readContext.getDbSortList()));
         }

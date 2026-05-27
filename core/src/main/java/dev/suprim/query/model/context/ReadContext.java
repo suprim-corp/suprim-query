@@ -31,6 +31,9 @@ public class ReadContext {
     boolean includeSoftDeleted;
     @Builder.Default
     List<ExpressionField> expressions = List.of();
+    /** Qualified column references for GROUP BY, e.g. {@code u."name"}. Must match SELECT projection. */
+    @Builder.Default
+    List<String> groupBys = List.of();
 
     // Derived attributes
     DbTable root;

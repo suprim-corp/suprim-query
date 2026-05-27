@@ -688,6 +688,131 @@ class SqlCreatorTemplateTest {
     }
 
     @Nested
+    @DisplayName("query() - GROUP BY support")
+    class GroupByTests {
+
+        @Test
+        void query_withGroupBy_rendersGroupByClause() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(List.of(
+                    new DbColumn("users", "name", "", "u", false, "varchar", false, false, String.class, "\"", "")
+            ));
+            ctx.setExpressions(List.of(ExpressionField.count("*").as("total")));
+            ctx.setGroupBys(List.of("u.\"name\""));
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).contains("GROUP BY u.\"name\"");
+            assertThat(sql).contains("COUNT(*)");
+        }
+
+        @Test
+        void query_withMultipleGroupByColumns_rendersAllColumns() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(USERS_TABLE.buildColumns());
+            ctx.setGroupBys(List.of("u.\"name\"", "u.\"email\""));
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).contains("GROUP BY u.\"name\", u.\"email\"");
+        }
+
+        @Test
+        void query_withEmptyGroupBy_doesNotRenderGroupByClause() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(USERS_TABLE.buildColumns());
+            ctx.setGroupBys(List.of());
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).doesNotContain("GROUP BY");
+        }
+
+        @Test
+        void query_withNullGroupBy_doesNotRenderGroupByClause() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(USERS_TABLE.buildColumns());
+            ctx.setGroupBys(null);
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).doesNotContain("GROUP BY");
+        }
+
+        @Test
+        void query_groupByAppearsAfterWhereAndBeforeOrderBy() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(List.of(
+                    new DbColumn("users", "name", "", "u", false, "varchar", false, false, String.class, "\"", "")
+            ));
+            ctx.setExpressions(List.of(ExpressionField.count("*").as("total")));
+            ctx.setGroupBys(List.of("u.\"name\""));
+            ctx.setRootWhere("u.\"id\" > :min_id");
+            ctx.setDbSortList(List.of(new DbSort("users", "u", "name", "ASC")));
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            int whereIdx = sql.indexOf("WHERE");
+            int groupByIdx = sql.indexOf("GROUP BY");
+            int orderByIdx = sql.indexOf("ORDER BY");
+
+            assertThat(whereIdx).isLessThan(groupByIdx);
+            assertThat(groupByIdx).isLessThan(orderByIdx);
+        }
+
+        @Test
+        void query_groupByWithoutWhere_rendersCorrectly() throws DbException {
+            when(jdbcManager.getDialect("db1")).thenReturn(dialect);
+            when(dialect.getReadSqlTemplate()).thenReturn("read");
+
+            ReadContext ctx = new ReadContext();
+            ctx.setDbId("db1");
+            ctx.setRoot(USERS_TABLE);
+            ctx.setCols(List.of(
+                    new DbColumn("users", "name", "", "u", false, "varchar", false, false, String.class, "\"", "")
+            ));
+            ctx.setExpressions(List.of(ExpressionField.count("*").as("total")));
+            ctx.setGroupBys(List.of("u.\"name\""));
+            ctx.setLimit(10);
+
+            String sql = sqlCreatorTemplate.query(ctx);
+
+            assertThat(sql).doesNotContain("WHERE");
+            assertThat(sql).contains("GROUP BY u.\"name\"");
+        }
+    }
+
+    @Nested
     @DisplayName("Template not found")
     class TemplateNotFoundTests {
 

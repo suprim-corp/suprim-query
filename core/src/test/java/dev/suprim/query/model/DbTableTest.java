@@ -227,6 +227,30 @@ class DbTableTest {
     }
 
     @Test
+    void buildColumn_withArrowAndEmptyKey_shouldProduceEmptyQuotedKey() throws DbException {
+        DbColumn result = JSONB_TABLE.buildColumn("data->>");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->>''");
+    }
+
+    @Test
+    void buildColumn_withSingleCharKey_shouldNotBeConsideredQuoted() throws DbException {
+        DbColumn result = JSONB_TABLE.buildColumn("data->>x");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEqualTo("->>'x'");
+    }
+
+    @Test
+    void buildColumn_withNoJsonOperator_shouldReturnPlainColumn() throws DbException {
+        DbColumn result = JSONB_TABLE.buildColumn("data");
+
+        assertThat(result.name()).isEqualTo("data");
+        assertThat(result.jsonParts()).isEmpty();
+    }
+
+    @Test
     void buildColumns_shouldReturnAllColumns() {
         DbColumn col1 = createColumn("id", true);
         DbColumn col2 = createColumn("name", false);

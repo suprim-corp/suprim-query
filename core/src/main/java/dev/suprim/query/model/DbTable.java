@@ -2,6 +2,7 @@ package dev.suprim.query.model;
 
 import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.List;
 import static java.util.Objects.isNull;
 
 @Slf4j
+@Builder
 public record DbTable(
 		String schema, String name, String fullName, String alias,
 		List<DbColumn> dbColumns, String type, String coverChar
@@ -22,15 +24,15 @@ public record DbTable(
 				dbColumns.stream()
 				         .map(col -> col.copyWithTableAlias(tableAlias))
 				         .toList();
-		return new DbTable(
-				schema,
-				name,
-				fullName,
-				tableAlias,
-				columns,
-				type,
-				coverChar
-		);
+		return DbTable.builder()
+		              .schema(schema)
+		              .name(name)
+		              .fullName(fullName)
+		              .alias(tableAlias)
+		              .dbColumns(columns)
+		              .type(type)
+		              .coverChar(coverChar)
+		              .build();
 	}
 
 	public DbColumn buildColumn(String columnName) throws DbException {

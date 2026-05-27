@@ -83,59 +83,64 @@ public record DbTable(
 		String colName = columnName;
 		String jsonParts = "";
 
-		// PostgreSQL path array operators: data#>>a.b.c → #>>'{a,b,c}'
 		if (columnName.contains("#>>")) {
-			int index = columnName.indexOf("#>>");
-			colName = columnName.substring(0, index);
-			String path = columnName.substring(index + 3);
-			jsonParts = "#>>'{" + path.replace(".", ",") + "}'";
+			colName = columnName.substring(0, columnName.indexOf("#>>"));
+			jsonParts = parsePathArray(columnName, "#>>", 3);
 		} else if (columnName.contains("#>")) {
-			int index = columnName.indexOf("#>");
-			colName = columnName.substring(0, index);
-			String path = columnName.substring(index + 2);
-			jsonParts = "#>'{" + path.replace(".", ",") + "}'";
-
-			// Arrow operators: supports chaining (data->a->b->>c)
+			colName = columnName.substring(0, columnName.indexOf("#>"));
+			jsonParts = parsePathArray(columnName, "#>", 2);
 		} else if (columnName.contains("->>") || columnName.contains("->")) {
 			jsonParts = parseChainedArrows(columnName);
-			int firstOp = columnName.indexOf("->");
-			colName = columnName.substring(0, firstOp);
-
-			// Double-asterisk shorthand: data**a**b → ->'a'->>'b'
-			// Intermediate segments use -> (object), last segment uses ->> (text)
+			colName = columnName.substring(0, columnName.indexOf("->"));
 		} else if (columnName.contains("**")) {
-			int index = columnName.indexOf("**");
-			colName = columnName.substring(0, index);
-			String remainder = columnName.substring(index + 2);
-			validateNotBlank(remainder, fieldExpression);
-			String[] segments = remainder.split("\\*\\*");
-			StringBuilder sb = new StringBuilder();
-			for (int i = 0; i < segments.length; i++) {
-				if (i == segments.length - 1) {
-					sb.append("->>'").append(segments[i]).append("'");
-				} else {
-					sb.append("->'").append(segments[i]).append("'");
-				}
-			}
-			jsonParts = sb.toString();
-
-			// Single-asterisk shorthand: data*a*b → ->'a'->'b'
-			// All segments use -> (object extraction, returns jsonb)
+			colName = columnName.substring(0, columnName.indexOf("**"));
+			jsonParts = parseAsteriskShorthand(columnName, "\\*\\*", 2, true, fieldExpression);
 		} else if (columnName.contains("*")) {
-			int index = columnName.indexOf("*");
-			colName = columnName.substring(0, index);
-			String remainder = columnName.substring(index + 1);
-			validateNotBlank(remainder, fieldExpression);
-			String[] segments = remainder.split("\\*");
-			StringBuilder sb = new StringBuilder();
-			for (String segment : segments) {
-				sb.append("->'").append(segment).append("'");
-			}
-			jsonParts = sb.toString();
+			colName = columnName.substring(0, columnName.indexOf("*"));
+			jsonParts = parseAsteriskShorthand(columnName, "\\*", 1, false, fieldExpression);
 		}
 
 		String alias = aliasParts.length == 2 ? aliasParts[1] : "";
 		return new DbAlias(colName.trim(), alias.trim(), jsonParts);
+	}
+
+	/**
+	 * Parses PostgreSQL path array syntax: {@code data#>>a.b.c} → {@code #>>'{a,b,c}'}
+	 */
+	private String parsePathArray(String columnName, String operator, int operatorLength) {
+		int index = columnName.indexOf(operator);
+		String path = columnName.substring(index + operatorLength);
+		return operator + "'{" + path.replace(".", ",") + "}'";
+	}
+
+	/**
+	 * Parses asterisk shorthand into chained arrow operators.
+	 * <ul>
+	 *   <li>{@code **} (textExtractLast=true): intermediate → {@code ->}, last → {@code ->>}</li>
+	 *   <li>{@code *} (textExtractLast=false): all → {@code ->}</li>
+	 * </ul>
+	 */
+	private String parseAsteriskShorthand(
+			String columnName, String delimiterRegex, int delimiterLength,
+			boolean textExtractLast, String fieldExpression
+	) throws DbException {
+		int index = columnName.indexOf(delimiterRegex.replace("\\", "").replace("*", "*"));
+		// Find actual first delimiter position
+		index = textExtractLast
+				? columnName.indexOf("**")
+				: columnName.indexOf("*");
+		String remainder = columnName.substring(index + (textExtractLast ? 2 : 1));
+		validateNotBlank(remainder, fieldExpression);
+		String[] segments = remainder.split(delimiterRegex);
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < segments.length; i++) {
+			if (textExtractLast && i == segments.length - 1) {
+				sb.append("->>'").append(segments[i]).append("'");
+			} else {
+				sb.append("->'").append(segments[i]).append("'");
+			}
+		}
+		return sb.toString();
 	}
 
 	private void validateNotBlank(String remainder, String expression) throws DbException {

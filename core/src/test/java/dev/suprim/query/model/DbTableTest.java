@@ -10,6 +10,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DbTableTest {
 
+    private static final DbColumn DATA_COLUMN = new DbColumn(
+            "users", "data", "", "t", false, "jsonb", false, false, String.class, "\"", ""
+    );
+    private static final DbTable JSONB_TABLE = new DbTable(
+            "public", "users", "public.users", "t", List.of(DATA_COLUMN), "TABLE", "\""
+    );
+
     @Test
     void render_shouldReturnFullNameAndAlias() {
         DbTable table = createTable();
@@ -55,10 +62,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withJsonArrowOperator_shouldParseCorrectly() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data->>name");
+        DbColumn result = JSONB_TABLE.buildColumn("data->>name");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->>'name'");
@@ -66,10 +70,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withJsonSingleArrow_shouldParseCorrectly() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data->nested");
+        DbColumn result = JSONB_TABLE.buildColumn("data->nested");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->'nested'");
@@ -77,10 +78,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withJsonHashDoubleArrow_shouldParseCorrectly() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data#>>nested.field");
+        DbColumn result = JSONB_TABLE.buildColumn("data#>>nested.field");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("#>>'{nested,field}'");
@@ -88,10 +86,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withJsonHashSingleArrow_shouldParseCorrectly() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data#>nested.field");
+        DbColumn result = JSONB_TABLE.buildColumn("data#>nested.field");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("#>'{nested,field}'");
@@ -99,10 +94,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withDoubleAsterisk_shouldParseCorrectly() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data**name");
+        DbColumn result = JSONB_TABLE.buildColumn("data**name");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->>'name'");
@@ -110,10 +102,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withSingleAsterisk_shouldParseCorrectly() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data*name");
+        DbColumn result = JSONB_TABLE.buildColumn("data*name");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->'name'");
@@ -150,10 +139,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withMultiLevelArrow_shouldParseChainedOperators() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data->'feedback'->>'type'");
+        DbColumn result = JSONB_TABLE.buildColumn("data->'feedback'->>'type'");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->'feedback'->>'type'");
@@ -161,10 +147,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withMultiLevelUnquotedArrow_shouldAutoQuoteKeys() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data->feedback->>type");
+        DbColumn result = JSONB_TABLE.buildColumn("data->feedback->>type");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->'feedback'->>'type'");
@@ -183,10 +166,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withMultiLevelDoubleAsterisk_shouldChainTextExtraction() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data**feedback**type");
+        DbColumn result = JSONB_TABLE.buildColumn("data**feedback**type");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->'feedback'->>'type'");
@@ -194,10 +174,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withMultiLevelSingleAsterisk_shouldChainObjectExtraction() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data*feedback*type");
+        DbColumn result = JSONB_TABLE.buildColumn("data*feedback*type");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("->'feedback'->'type'");
@@ -205,10 +182,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withMultiLevelHashPath_shouldProducePostgresPathArray() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data#>>feedback.type.value");
+        DbColumn result = JSONB_TABLE.buildColumn("data#>>feedback.type.value");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.jsonParts()).isEqualTo("#>>'{feedback,type,value}'");
@@ -216,10 +190,7 @@ class DbTableTest {
 
     @Test
     void buildColumn_withMultiLevelArrowAndAlias_shouldSetAlias() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data->feedback->>type:feedback_type");
+        DbColumn result = JSONB_TABLE.buildColumn("data->feedback->>type:feedback_type");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.alias()).isEqualTo("feedback_type");
@@ -228,40 +199,28 @@ class DbTableTest {
 
     @Test
     void buildColumn_withTrailingDoubleAsterisk_shouldThrowDbException() {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        assertThatThrownBy(() -> table.buildColumn("data**"))
+        assertThatThrownBy(() -> JSONB_TABLE.buildColumn("data**"))
                 .isInstanceOf(DbException.class)
                 .hasMessageContaining("trailing delimiter");
     }
 
     @Test
     void buildColumn_withTrailingSingleAsterisk_shouldThrowDbException() {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        assertThatThrownBy(() -> table.buildColumn("data*"))
+        assertThatThrownBy(() -> JSONB_TABLE.buildColumn("data*"))
                 .isInstanceOf(DbException.class)
                 .hasMessageContaining("trailing delimiter");
     }
 
     @Test
     void buildColumn_withUnclosedQuote_shouldThrowDbException() {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        assertThatThrownBy(() -> table.buildColumn("data->'feedback"))
+        assertThatThrownBy(() -> JSONB_TABLE.buildColumn("data->'feedback"))
                 .isInstanceOf(DbException.class)
                 .hasMessageContaining("Unclosed quote");
     }
 
     @Test
     void buildColumn_withMultipleColons_shouldUseFirstColonOnly() throws DbException {
-        DbColumn col = createColumn("data", false);
-        DbTable table = new DbTable("public", "users", "public.users", "t", List.of(col), "TABLE", "\"");
-
-        DbColumn result = table.buildColumn("data->>name:alias:extra");
+        DbColumn result = JSONB_TABLE.buildColumn("data->>name:alias:extra");
 
         assertThat(result.name()).isEqualTo("data");
         assertThat(result.alias()).isEqualTo("alias:extra");

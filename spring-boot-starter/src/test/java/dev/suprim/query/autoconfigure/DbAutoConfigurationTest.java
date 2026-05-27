@@ -1,6 +1,7 @@
 package dev.suprim.query.autoconfigure;
 
 import dev.suprim.query.jdbc.config.DatabaseConnectionDetail;
+import dev.suprim.query.jdbc.config.RoutingDataSource;
 import dev.suprim.query.jdbc.executor.creation.CreationService;
 import dev.suprim.query.jdbc.executor.deletion.DeleteService;
 import dev.suprim.query.jdbc.executor.read.ReadService;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.ApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -24,6 +26,9 @@ import javax.sql.DataSource;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests for DbAutoConfiguration using Testcontainers PostgreSQL.
@@ -107,7 +112,7 @@ class DbAutoConfigurationTest {
     @Test
     void objectMapper_whenMissing_shouldBeCreated() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         ObjectMapper mapper = config.objectMapper();
 
@@ -117,7 +122,7 @@ class DbAutoConfigurationTest {
     @Test
     void dbOperationService_shouldReturnJdbcOperationService() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         DbOperationService service = config.dbOperationService();
 
@@ -127,7 +132,7 @@ class DbAutoConfigurationTest {
     @Test
     void templateEngine_shouldReturnPrecompiledEngine() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         TemplateEngine engine = config.templateEngine();
 
@@ -137,7 +142,7 @@ class DbAutoConfigurationTest {
     @Test
     void tsidProcessor_shouldReturnInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         TSIDProcessor processor = config.tsidProcessor();
 
@@ -147,7 +152,7 @@ class DbAutoConfigurationTest {
     @Test
     void orderByProcessor_shouldReturnInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         OrderByProcessor processor = config.orderByProcessor();
 
@@ -157,7 +162,7 @@ class DbAutoConfigurationTest {
     @Test
     void rootTableFieldProcessor_shouldReturnInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         RootTableFieldProcessor processor = config.rootTableFieldProcessor();
 
@@ -167,7 +172,7 @@ class DbAutoConfigurationTest {
     @Test
     void dataSource_withNoDatabases_shouldThrowException() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalStateException.class,
@@ -189,7 +194,7 @@ class DbAutoConfigurationTest {
                 null, null, null, null, null, 10
         );
         properties.setDatabases(List.of(dbWithoutUrl));
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalStateException.class,
@@ -211,7 +216,7 @@ class DbAutoConfigurationTest {
                 null, null, null, null, null, 10
         );
         properties.setDatabases(List.of(dbWithEmptyUrl));
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalStateException.class,
@@ -233,7 +238,7 @@ class DbAutoConfigurationTest {
                 null, null, null, null, null, 5
         );
         properties.setDatabases(List.of(db));
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         DataSource dataSource = config.dataSource();
 
@@ -253,7 +258,7 @@ class DbAutoConfigurationTest {
                 null, null, null, null, null, 0
         );
         properties.setDatabases(List.of(db));
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         DataSource dataSource = config.dataSource();
 
@@ -282,7 +287,7 @@ class DbAutoConfigurationTest {
                 null, null, null, null, null, 5
         );
         properties.setDatabases(List.of(dbWithUrl, dbWithoutUrl));
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
 
         DataSource dataSource = config.dataSource();
 
@@ -292,13 +297,13 @@ class DbAutoConfigurationTest {
     @Test
     void jdbcManager_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         DatabaseConnectionDetail db = new DatabaseConnectionDetail(
                 "test-db", "POSTGRESQL", jdbcUrl, username, password,
                 "testdb", null, null, null, null, null, 5
         );
         properties.setDatabases(List.of(db));
-        DataSource dataSource = config.dataSource();
+        RoutingDataSource dataSource = config.dataSource();
         ObjectMapper objectMapper = config.objectMapper();
 
         JdbcManager manager = config.jdbcManager(dataSource, objectMapper);
@@ -309,7 +314,7 @@ class DbAutoConfigurationTest {
     @Test
     void sqlCreatorTemplate_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
         TemplateEngine templateEngine = config.templateEngine();
 
@@ -321,7 +326,7 @@ class DbAutoConfigurationTest {
     @Test
     void joinProcessor_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
 
         JoinProcessor processor = config.joinProcessor(jdbcManager);
@@ -332,7 +337,7 @@ class DbAutoConfigurationTest {
     @Test
     void rootTableProcessor_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
 
         RootTableProcessor processor = config.rootTableProcessor(jdbcManager);
@@ -343,7 +348,7 @@ class DbAutoConfigurationTest {
     @Test
     void rootWhereProcessor_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
 
         RootWhereProcessor processor = config.rootWhereProcessor(jdbcManager);
@@ -354,7 +359,7 @@ class DbAutoConfigurationTest {
     @Test
     void readService_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
         TemplateEngine templateEngine = config.templateEngine();
         SqlCreatorTemplate sqlCreatorTemplate = config.sqlCreatorTemplate(templateEngine, jdbcManager);
@@ -368,7 +373,7 @@ class DbAutoConfigurationTest {
     @Test
     void creationService_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
         TemplateEngine templateEngine = config.templateEngine();
         SqlCreatorTemplate sqlCreatorTemplate = config.sqlCreatorTemplate(templateEngine, jdbcManager);
@@ -383,7 +388,7 @@ class DbAutoConfigurationTest {
     @Test
     void updateService_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
         TemplateEngine templateEngine = config.templateEngine();
         SqlCreatorTemplate sqlCreatorTemplate = config.sqlCreatorTemplate(templateEngine, jdbcManager);
@@ -397,7 +402,7 @@ class DbAutoConfigurationTest {
     @Test
     void deleteService_shouldCreateInstance() {
         DbProperties properties = new DbProperties();
-        DbAutoConfiguration config = new DbAutoConfiguration(properties);
+        DbAutoConfiguration config = new DbAutoConfiguration(properties, mockApplicationContext());
         JdbcManager jdbcManager = createJdbcManager(properties, config);
         TemplateEngine templateEngine = config.templateEngine();
         SqlCreatorTemplate sqlCreatorTemplate = config.sqlCreatorTemplate(templateEngine, jdbcManager);
@@ -415,8 +420,15 @@ class DbAutoConfigurationTest {
                 "testdb", null, null, null, null, null, 5
         );
         properties.setDatabases(List.of(db));
-        DataSource dataSource = config.dataSource();
+        RoutingDataSource dataSource = config.dataSource();
         ObjectMapper objectMapper = config.objectMapper();
         return config.jdbcManager(dataSource, objectMapper);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ApplicationContext mockApplicationContext() {
+        ApplicationContext ctx = mock(ApplicationContext.class);
+        when(ctx.getBeanNamesForType((Class<?>) any())).thenReturn(new String[0]);
+        return ctx;
     }
 }

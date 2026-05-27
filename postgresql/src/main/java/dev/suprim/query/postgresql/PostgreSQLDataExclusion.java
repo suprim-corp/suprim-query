@@ -117,15 +117,17 @@ public class PostgreSQLDataExclusion implements MetaDataExtraction {
                     ? schema
                     : metaDataTable.catalog();
 
-            return new DbTable(
-                    schemaName,
-                    metaDataTable.tableName(),
-                    schemaName + "." + metaDataTable.tableName(),
-                    metaDataTable.tableAlias(),
-                    columns,
-                    metaDataTable.tableType(),
-                    "\""
-            );
+            return DbTable.builder()
+                          .schema(schemaName)
+                          .name(metaDataTable.tableName())
+                          .fullName(
+                                  schemaName + "." + metaDataTable.tableName()
+                          )
+                          .alias(metaDataTable.tableAlias())
+                          .dbColumns(columns)
+                          .type(metaDataTable.tableType())
+                          .coverChar("\"")
+                          .build();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

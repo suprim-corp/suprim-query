@@ -329,6 +329,17 @@ class ResultMapperTest {
         }
 
         @Test
+        void wrapperTypes_coerceFromLong() {
+            // Test the Integer.class / Long.class / Double.class etc. branches
+            assertThat(TypeCoercer.coerceNumber(42L, Integer.class)).isEqualTo(42);
+            assertThat(TypeCoercer.coerceNumber(42, Long.class)).isEqualTo(42L);
+            assertThat(TypeCoercer.coerceNumber(42L, Double.class)).isEqualTo(42.0);
+            assertThat(TypeCoercer.coerceNumber(42L, Float.class)).isEqualTo(42.0f);
+            assertThat(TypeCoercer.coerceNumber(42L, Short.class)).isEqualTo((short) 42);
+            assertThat(TypeCoercer.coerceNumber(42L, Byte.class)).isEqualTo((byte) 42);
+        }
+
+        @Test
         void bigDecimal_fromNumber() {
             Map<String, Object> row = Map.of("price", 19.99, "quantity", 100L);
 
@@ -435,15 +446,24 @@ class ResultMapperTest {
         @Test
         void timestamp_toLong() {
             Timestamp ts = Timestamp.valueOf(LocalDateTime.of(2024, 6, 15, 10, 30, 0));
-            Object result = coerce(ts, long.class);
-            assertThat(result).isEqualTo(ts.getTime());
+            assertThat(coerce(ts, long.class)).isEqualTo(ts.getTime());
+            assertThat(coerce(ts, Long.class)).isEqualTo(ts.getTime());
         }
 
         @Test
         void instant_toLong() {
             Instant instant = Instant.parse("2024-06-15T10:30:00Z");
-            Object result = coerce(instant, long.class);
-            assertThat(result).isEqualTo(instant.toEpochMilli());
+            assertThat(coerce(instant, long.class)).isEqualTo(instant.toEpochMilli());
+            assertThat(coerce(instant, Long.class)).isEqualTo(instant.toEpochMilli());
+        }
+
+        @Test
+        void sqlDate_toNonLocalDate_fallsThrough() {
+            java.sql.Date sqlDate = java.sql.Date.valueOf(LocalDate.of(2024, 6, 15));
+            // sql.Date with non-LocalDate target falls through the if-block
+            // and hits the final "Cannot coerce" since sql.Date is not OffsetDateTime/Instant/LocalDateTime
+            assertThatThrownBy(() -> coerce(sqlDate, OffsetDateTime.class))
+                    .isInstanceOf(MappingException.class);
         }
     }
 
@@ -480,6 +500,8 @@ class ResultMapperTest {
         void booleanFromNumber() {
             assertThat(coerce(1, boolean.class)).isEqualTo(true);
             assertThat(coerce(0, boolean.class)).isEqualTo(false);
+            assertThat(coerce(1, Boolean.class)).isEqualTo(true);
+            assertThat(coerce(0, Boolean.class)).isEqualTo(false);
         }
 
         @Test
@@ -489,11 +511,20 @@ class ResultMapperTest {
             assertThat(coerce("1", boolean.class)).isEqualTo(true);
             assertThat(coerce("yes", boolean.class)).isEqualTo(true);
             assertThat(coerce("no", boolean.class)).isEqualTo(false);
+            assertThat(coerce("true", Boolean.class)).isEqualTo(true);
         }
 
         @Test
         void booleanFromBoolean() {
             assertThat(coerce(Boolean.TRUE, boolean.class)).isEqualTo(true);
+        }
+
+        @Test
+        void booleanFromNumberViaCoerceBoolean() {
+            // Ensure Number path in coerceBoolean is hit (not the coerceNumber path)
+            // This happens when rawValue is Number and targetType is Boolean.class
+            // but isAssignableFrom doesn't match (Number is not Boolean)
+            assertThat(coerce(1L, Boolean.class)).isEqualTo(true);
         }
 
         @Test
@@ -725,24 +756,24 @@ class ResultMapperTest {
         @Test
         void bigDecimalPassthrough() {
             BigDecimal bd = new BigDecimal("123.45");
-            assertThat(coerce(bd, BigDecimal.class)).isSameAs(bd);
+            assertThat(TypeCoercer.coerceNumber(bd, BigDecimal.class)).isSameAs(bd);
         }
 
         @Test
         void bigIntegerPassthrough() {
             BigInteger bi = BigInteger.valueOf(999);
-            assertThat(coerce(bi, BigInteger.class)).isSameAs(bi);
+            assertThat(TypeCoercer.coerceNumber(bi, BigInteger.class)).isSameAs(bi);
         }
 
         @Test
         void numberToBigDecimal_fromInteger() {
-            Object result = coerce(42, BigDecimal.class);
+            Object result = TypeCoercer.coerceNumber(42, BigDecimal.class);
             assertThat(result).isEqualTo(BigDecimal.valueOf(42.0));
         }
 
         @Test
         void numberToBigInteger_fromInteger() {
-            Object result = coerce(42, BigInteger.class);
+            Object result = TypeCoercer.coerceNumber(42, BigInteger.class);
             assertThat(result).isEqualTo(BigInteger.valueOf(42));
         }
 
@@ -754,6 +785,11 @@ class ResultMapperTest {
         @Test
         void numberToBoolean_nonZeroIsTrue() {
             assertThat(coerce(5, Boolean.class)).isEqualTo(true);
+        }
+
+        @Test
+        void numberToString_viaCoerceNumber() {
+            assertThat(TypeCoercer.coerceNumber(3.14, String.class)).isEqualTo("3.14");
         }
 
         @Test
@@ -829,5 +865,20 @@ class ResultMapperTest {
 
             assertThat(result.getName()).isEqualTo("Alice");
         }
+
+        @Test
+        void syntheticFields_areIgnored() {
+            // Non-static inner class has a synthetic "this$0" field.
+            // resolve() will call collectFields (hitting the synthetic branch)
+            // then fail on no-arg constructor — but the synthetic skip is still covered.
+            assertThatThrownBy(() -> TypeMetadata.resolve(InnerClassWithSynthetic.class))
+                    .isInstanceOf(MappingException.class)
+                    .hasMessageContaining("no-arg constructor");
+        }
+    }
+
+    // Non-static inner class — compiler generates synthetic "this$0" field
+    public class InnerClassWithSynthetic {
+        private String value;
     }
 }

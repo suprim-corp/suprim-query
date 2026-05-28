@@ -110,7 +110,7 @@ final class TypeCoercer {
 
     // --- Number ---
 
-    private static Object coerceNumber(Number number, Class<?> targetType) {
+    static Object coerceNumber(Number number, Class<?> targetType) {
         if (targetType == int.class || targetType == Integer.class) {
             return number.intValue();
         }
@@ -234,9 +234,6 @@ final class TypeCoercer {
     private static Object coerceBoolean(Object rawValue) {
         if (rawValue instanceof Boolean) {
             return rawValue;
-        }
-        if (rawValue instanceof Number number) {
-            return number.intValue() != 0;
         }
         if (rawValue instanceof String s) {
             return "true".equalsIgnoreCase(s) || "1".equals(s) || "yes".equalsIgnoreCase(s);

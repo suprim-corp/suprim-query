@@ -191,7 +191,7 @@ class FilterBuilderTest {
 
 		@Test
 		void ilike_shouldUseILikeOperator() {
-			String result = FilterBuilder.and().ilike("name", "john").build();
+			String result = FilterBuilder.and().iLike("name", "john").build();
 			assertThat(result).isEqualTo("name=ilike='john'");
 		}
 

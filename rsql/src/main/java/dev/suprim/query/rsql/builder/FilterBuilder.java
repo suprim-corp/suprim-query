@@ -104,74 +104,90 @@ public class FilterBuilder {
 	// ==================== COMPARISON ====================
 
 	public FilterBuilder eq(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.EQUAL.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.EQUAL.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder neq(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.NOT_EQUAL.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.NOT_EQUAL.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder gt(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.GREATER_THAN.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.GREATER_THAN.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder gte(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.GREATER_THAN_OR_EQUAL.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.GREATER_THAN_OR_EQUAL.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder lt(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.LESS_THAN.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.LESS_THAN.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder lte(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.LESS_THAN_OR_EQUAL.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.LESS_THAN_OR_EQUAL.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder in(String field, String... values) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.IN.getSymbol(),
-				Arrays.asList(values)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.IN.getSymbol(),
+						Arrays.asList(values)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder notIn(String field, String... values) {
-		predicates.add(new Comparison(
-				field,
-				RSQLOperators.NOT_IN.getSymbol(),
-				Arrays.asList(values)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						RSQLOperators.NOT_IN.getSymbol(),
+						Arrays.asList(values)
+				)
+		);
 		return this;
 	}
 
@@ -184,57 +200,69 @@ public class FilterBuilder {
 		return this;
 	}
 
-	public FilterBuilder ilike(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.ILIKE.getSymbol(),
-				List.of(value)
-		));
+	public FilterBuilder iLike(String field, String value) {
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.ILIKE.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder startWith(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.START_WITH.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.START_WITH.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder endWith(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.END_WITH.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.END_WITH.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder isNull(String field) {
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.IS_NULL.getSymbol(),
-				List.of("true")
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.IS_NULL.getSymbol(),
+						List.of("true")
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder isNotNull(String field) {
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.NOT_NULL.getSymbol(),
-				List.of("true")
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.NOT_NULL.getSymbol(),
+						List.of("true")
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder jsonbContains(String field, String value) {
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
-				List.of(value)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
+						List.of(value)
+				)
+		);
 		return this;
 	}
 
@@ -244,11 +272,13 @@ public class FilterBuilder {
 	 */
 	public FilterBuilder jsonbContains(String field, String key, String value) {
 		String json = "{\"" + key + "\":\"" + value + "\"}";
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
-				List.of(json)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
+						List.of(json)
+				)
+		);
 		return this;
 	}
 
@@ -259,30 +289,159 @@ public class FilterBuilder {
 	 */
 	public FilterBuilder jsonbContains(String field, Map<String, Object> map) {
 		String json = mapToJson(map);
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
-				List.of(json)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.JSONB_CONTAIN.getSymbol(),
+						List.of(json)
+				)
+		);
 		return this;
 	}
 
 	public FilterBuilder jsonbKeyExists(String field, String key) {
-		predicates.add(new Comparison(
-				field,
-				CustomRSQLOperators.JSONB_KEY_EXISTS.getSymbol(),
-				List.of(key)
-		));
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.JSONB_KEY_EXISTS.getSymbol(),
+						List.of(key)
+				)
+		);
+		return this;
+	}
+
+	// ==================== CONDITIONAL (null-safe) ====================
+
+	/**
+	 * Adds an equality predicate only if value is non-null.
+	 * Accepts any type — calls {@code toString()} on the value.
+	 */
+	public FilterBuilder eqIfPresent(String field, Object value) {
+		if (value != null) {
+			eq(field, value.toString());
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a not-equal predicate only if value is non-null.
+	 */
+	public FilterBuilder neqIfPresent(String field, Object value) {
+		if (value != null) {
+			neq(field, value.toString());
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a greater-than predicate only if value is non-null.
+	 */
+	public FilterBuilder gtIfPresent(String field, Object value) {
+		if (value != null) {
+			gt(field, value.toString());
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a greater-than-or-equal predicate only if value is non-null.
+	 */
+	public FilterBuilder gteIfPresent(String field, Object value) {
+		if (value != null) {
+			gte(field, value.toString());
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a less-than predicate only if value is non-null.
+	 */
+	public FilterBuilder ltIfPresent(String field, Object value) {
+		if (value != null) {
+			lt(field, value.toString());
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a less-than-or-equal predicate only if value is non-null.
+	 */
+	public FilterBuilder lteIfPresent(String field, Object value) {
+		if (value != null) {
+			lte(field, value.toString());
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a LIKE predicate only if value is non-null and non-blank.
+	 */
+	public FilterBuilder likeIfPresent(String field, String value) {
+		if (value != null && !value.isBlank()) {
+			like(field, value);
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a case-insensitive LIKE predicate only if value is non-null and non-blank.
+	 */
+	public FilterBuilder iLikeIfPresent(String field, String value) {
+		if (value != null && !value.isBlank()) {
+			iLike(field, value);
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a starts-with predicate only if value is non-null and non-blank.
+	 */
+	public FilterBuilder startWithIfPresent(String field, String value) {
+		if (value != null && !value.isBlank()) {
+			startWith(field, value);
+		}
+		return this;
+	}
+
+	/**
+	 * Adds an ends-with predicate only if value is non-null and non-blank.
+	 */
+	public FilterBuilder endWithIfPresent(String field, String value) {
+		if (value != null && !value.isBlank()) {
+			endWith(field, value);
+		}
+		return this;
+	}
+
+	/**
+	 * Adds an IN predicate only if values array is non-null and non-empty.
+	 */
+	public FilterBuilder inIfPresent(String field, String... values) {
+		if (values != null && values.length > 0) {
+			in(field, values);
+		}
+		return this;
+	}
+
+	/**
+	 * Adds a NOT IN predicate only if values array is non-null and non-empty.
+	 */
+	public FilterBuilder notInIfPresent(String field, String... values) {
+		if (values != null && values.length > 0) {
+			notIn(field, values);
+		}
 		return this;
 	}
 
 	// ==================== NESTING ====================
 
 	public FilterBuilder and(FilterBuilder nested) {
-		predicates.add(new Group(
-				LogicalOperator.AND,
-				List.copyOf(nested.predicates)
-		));
+		predicates.add(
+				new Group(
+						LogicalOperator.AND,
+						List.copyOf(nested.predicates)
+				)
+		);
 		return this;
 	}
 

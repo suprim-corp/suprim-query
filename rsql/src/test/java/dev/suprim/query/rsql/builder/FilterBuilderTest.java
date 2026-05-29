@@ -409,4 +409,280 @@ class FilterBuilderTest {
 			assertThat(result).isEqualTo("(a=='1' and b=='2' and c=='3')");
 		}
 	}
+
+	// ==================== Conditional (IfPresent) ====================
+
+	@Nested
+	class IfPresentTest {
+
+		@Test
+		void eqIfPresent_nonNull_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.eqIfPresent("status", "active")
+					.build();
+			assertThat(result).isEqualTo("status=='active'");
+		}
+
+		@Test
+		void eqIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.eqIfPresent("status", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void eqIfPresent_nonStringObject_shouldCallToString() {
+			java.util.UUID uuid = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+			String result = FilterBuilder.and()
+					.eqIfPresent("id", uuid)
+					.build();
+			assertThat(result).isEqualTo("id=='550e8400-e29b-41d4-a716-446655440000'");
+		}
+
+		@Test
+		void neqIfPresent_nonNull_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.neqIfPresent("role", "guest")
+					.build();
+			assertThat(result).isEqualTo("role!='guest'");
+		}
+
+		@Test
+		void neqIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.neqIfPresent("role", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void gtIfPresent_nonNull_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.gtIfPresent("age", "18")
+					.build();
+			assertThat(result).isEqualTo("age=gt='18'");
+		}
+
+		@Test
+		void gtIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.gtIfPresent("age", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void gteIfPresent_nonNull_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.gteIfPresent("price", "100")
+					.build();
+			assertThat(result).isEqualTo("price=ge='100'");
+		}
+
+		@Test
+		void gteIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.gteIfPresent("price", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void ltIfPresent_nonNull_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.ltIfPresent("stock", "5")
+					.build();
+			assertThat(result).isEqualTo("stock=lt='5'");
+		}
+
+		@Test
+		void ltIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.ltIfPresent("stock", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void lteIfPresent_nonNull_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.lteIfPresent("rating", "3")
+					.build();
+			assertThat(result).isEqualTo("rating=le='3'");
+		}
+
+		@Test
+		void lteIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.lteIfPresent("rating", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void iLikeIfPresent_nonBlank_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.iLikeIfPresent("name", "john")
+					.build();
+			assertThat(result).isEqualTo("name=ilike='john'");
+		}
+
+		@Test
+		void iLikeIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.iLikeIfPresent("name", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void iLikeIfPresent_blank_shouldSkip() {
+			String result = FilterBuilder.and()
+					.iLikeIfPresent("name", "   ")
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void likeIfPresent_nonBlank_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.likeIfPresent("name", "john")
+					.build();
+			assertThat(result).isEqualTo("name=like='john'");
+		}
+
+		@Test
+		void likeIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.likeIfPresent("name", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void likeIfPresent_blank_shouldSkip() {
+			String result = FilterBuilder.and()
+					.likeIfPresent("name", "")
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void startWithIfPresent_nonBlank_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.startWithIfPresent("name", "Jo")
+					.build();
+			assertThat(result).isEqualTo("name=startWith='Jo'");
+		}
+
+		@Test
+		void startWithIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.startWithIfPresent("name", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void startWithIfPresent_blank_shouldSkip() {
+			String result = FilterBuilder.and()
+					.startWithIfPresent("name", "   ")
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void endWithIfPresent_nonBlank_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.endWithIfPresent("email", ".com")
+					.build();
+			assertThat(result).isEqualTo("email=endWith='.com'");
+		}
+
+		@Test
+		void endWithIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.endWithIfPresent("email", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void endWithIfPresent_blank_shouldSkip() {
+			String result = FilterBuilder.and()
+					.endWithIfPresent("email", "  ")
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void inIfPresent_nonEmpty_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.inIfPresent("status", "active", "pending")
+					.build();
+			assertThat(result).isEqualTo("status=in=(active,pending)");
+		}
+
+		@Test
+		void inIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.inIfPresent("status", (String[]) null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void inIfPresent_empty_shouldSkip() {
+			String result = FilterBuilder.and()
+					.inIfPresent("status")
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void notInIfPresent_nonEmpty_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.notInIfPresent("type", "draft", "archived")
+					.build();
+			assertThat(result).isEqualTo("type=out=(draft,archived)");
+		}
+
+		@Test
+		void notInIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.notInIfPresent("type", (String[]) null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void notInIfPresent_empty_shouldSkip() {
+			String result = FilterBuilder.and()
+					.notInIfPresent("type")
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void combined_mixedNullAndNonNull_shouldOnlyIncludePresent() {
+			String result = FilterBuilder.and()
+					.eqIfPresent("folder_id", "abc-123")
+					.eqIfPresent("status", null)
+					.eqIfPresent("product", "IELTS")
+					.iLikeIfPresent("name", null)
+					.build();
+			assertThat(result).isEqualTo("(folder_id=='abc-123' and product=='IELTS')");
+		}
+
+		@Test
+		void combined_allNull_shouldReturnEmpty() {
+			String result = FilterBuilder.and()
+					.eqIfPresent("a", null)
+					.eqIfPresent("b", null)
+					.iLikeIfPresent("c", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+	}
 }

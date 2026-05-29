@@ -590,6 +590,53 @@ class OperationCoreTest {
             assertThatThrownBy(() -> mapper.getColumnValue(rs, 1))
                     .isInstanceOf(RuntimeException.class);
         }
+
+        @Test
+        void getColumnValue_timestamptz_returnsOffsetDateTime() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
+
+            ResultSet rs = mock(ResultSet.class);
+            ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+            when(rs.getMetaData()).thenReturn(metaData);
+            when(metaData.getColumnTypeName(1)).thenReturn("timestamptz");
+            java.time.OffsetDateTime expected = java.time.OffsetDateTime.now();
+            when(rs.getObject(1, java.time.OffsetDateTime.class)).thenReturn(expected);
+
+            Object result = mapper.getColumnValue(rs, 1);
+
+            assertThat(result).isEqualTo(expected);
+        }
+
+        @Test
+        void getColumnValue_timestamp_returnsLocalDateTime() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
+
+            ResultSet rs = mock(ResultSet.class);
+            ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+            when(rs.getMetaData()).thenReturn(metaData);
+            when(metaData.getColumnTypeName(1)).thenReturn("timestamp");
+            java.time.LocalDateTime expected = java.time.LocalDateTime.now();
+            when(rs.getObject(1, java.time.LocalDateTime.class)).thenReturn(expected);
+
+            Object result = mapper.getColumnValue(rs, 1);
+
+            assertThat(result).isEqualTo(expected);
+        }
+
+        @Test
+        void getColumnValue_timestamptz_nullValue_returnsNull() throws Exception {
+            SimpleRowMapper mapper = new SimpleRowMapper(dialect);
+
+            ResultSet rs = mock(ResultSet.class);
+            ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+            when(rs.getMetaData()).thenReturn(metaData);
+            when(metaData.getColumnTypeName(1)).thenReturn("timestamptz");
+            when(rs.getObject(1, java.time.OffsetDateTime.class)).thenReturn(null);
+
+            Object result = mapper.getColumnValue(rs, 1);
+
+            assertThat(result).isNull();
+        }
     }
 
     @Nested

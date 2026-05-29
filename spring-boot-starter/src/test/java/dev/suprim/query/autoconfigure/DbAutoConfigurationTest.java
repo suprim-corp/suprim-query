@@ -335,7 +335,7 @@ class DbAutoConfigurationTest {
         DbAutoConfiguration config = new DbAutoConfiguration(properties);
         JdbcManager jdbcManager = createJdbcManager(properties, config);
 
-        RootTableProcessor processor = config.rootTableProcessor(jdbcManager);
+        RootTableProcessor processor = config.rootTableProcessor(jdbcManager, properties);
 
         assertThat(processor).isNotNull();
     }

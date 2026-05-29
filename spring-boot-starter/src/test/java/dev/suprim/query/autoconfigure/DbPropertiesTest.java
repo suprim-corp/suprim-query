@@ -1,6 +1,7 @@
 package dev.suprim.query.autoconfigure;
 
 import dev.suprim.query.jdbc.config.DatabaseConnectionDetail;
+import dev.suprim.query.model.SoftDeleteProperties;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
@@ -76,6 +77,65 @@ class DbPropertiesTest {
         assertThat(properties.getDatabases()).hasSize(1);
         assertThat(properties.getDatabases().get(0).id()).isEqualTo("second-db");
         assertThat(properties.getDefaultDatabaseId()).isEqualTo("first-db");
+    }
+
+    @Test
+    void resolveSoftDeleteProperties_nullConfig_returnsDisabled() {
+        DbProperties properties = new DbProperties();
+        properties.setSoftDelete(null);
+
+        SoftDeleteProperties result = properties.resolveSoftDeleteProperties();
+
+        assertThat(result.enabled()).isFalse();
+    }
+
+    @Test
+    void resolveSoftDeleteProperties_disabledConfig_returnsDisabled() {
+        DbProperties properties = new DbProperties();
+        DbProperties.SoftDeleteConfig config = new DbProperties.SoftDeleteConfig();
+        config.setEnabled(false);
+        properties.setSoftDelete(config);
+
+        SoftDeleteProperties result = properties.resolveSoftDeleteProperties();
+
+        assertThat(result.enabled()).isFalse();
+    }
+
+    @Test
+    void resolveSoftDeleteProperties_enabledConfig_returnsConfiguredProperties() {
+        DbProperties properties = new DbProperties();
+        DbProperties.SoftDeleteConfig config = new DbProperties.SoftDeleteConfig();
+        config.setEnabled(true);
+        config.setColumn("removed_at");
+        config.setTables(List.of("exam", "question"));
+        properties.setSoftDelete(config);
+
+        SoftDeleteProperties result = properties.resolveSoftDeleteProperties();
+
+        assertThat(result.enabled()).isTrue();
+        assertThat(result.column()).isEqualTo("removed_at");
+        assertThat(result.tables()).containsExactly("exam", "question");
+    }
+
+    @Test
+    void softDeleteConfig_defaults() {
+        DbProperties.SoftDeleteConfig config = new DbProperties.SoftDeleteConfig();
+
+        assertThat(config.isEnabled()).isFalse();
+        assertThat(config.getColumn()).isEqualTo("deleted_at");
+        assertThat(config.getTables()).isNull();
+    }
+
+    @Test
+    void softDeleteConfig_settersAndGetters() {
+        DbProperties.SoftDeleteConfig config = new DbProperties.SoftDeleteConfig();
+        config.setEnabled(true);
+        config.setColumn("archived_at");
+        config.setTables(List.of("users", "orders"));
+
+        assertThat(config.isEnabled()).isTrue();
+        assertThat(config.getColumn()).isEqualTo("archived_at");
+        assertThat(config.getTables()).containsExactly("users", "orders");
     }
 
     private DatabaseConnectionDetail createConnectionDetail(String id) {

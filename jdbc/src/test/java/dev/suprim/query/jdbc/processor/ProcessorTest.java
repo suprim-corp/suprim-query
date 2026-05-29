@@ -2,6 +2,7 @@ package dev.suprim.query.jdbc.processor;
 
 import dev.suprim.query.dialect.Dialect;
 import dev.suprim.query.exception.DbException;
+import dev.suprim.query.jdbc.config.DatabaseProperties;
 import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.model.*;
 import dev.suprim.query.model.context.ReadContext;
@@ -182,10 +183,12 @@ class ProcessorTest {
     class RootTableProcessorTests {
 
         private RootTableProcessor processor;
+        @Mock
+        private DatabaseProperties databaseProperties;
 
         @BeforeEach
         void setup() {
-            processor = new RootTableProcessor(jdbcManager);
+            processor = new RootTableProcessor(jdbcManager, databaseProperties);
         }
 
         @Test
@@ -254,6 +257,36 @@ class ProcessorTest {
                     .isInstanceOf(DbException.class)
                     .hasMessageContaining("offset must be >= 0");
         }
+
+        @Test
+        void process_nullDbId_fallsBackToDefaultDatabaseId() throws DbException {
+            when(databaseProperties.getDefaultDatabaseId()).thenReturn("main");
+            when(jdbcManager.getTable("main", null, "users")).thenReturn(usersTable);
+
+            ReadContext context = new ReadContext();
+            context.setTableName("users");
+
+            processor.process(context);
+
+            assertThat(context.getDbId()).isEqualTo("main");
+            assertThat(context.getRoot()).isNotNull();
+            assertThat(context.getRoot().name()).isEqualTo("users");
+        }
+
+        @Test
+        void process_blankDbId_fallsBackToDefaultDatabaseId() throws DbException {
+            when(databaseProperties.getDefaultDatabaseId()).thenReturn("main");
+            when(jdbcManager.getTable("main", null, "users")).thenReturn(usersTable);
+
+            ReadContext context = new ReadContext();
+            context.setDbId("  ");
+            context.setTableName("users");
+
+            processor.process(context);
+
+            assertThat(context.getDbId()).isEqualTo("main");
+            assertThat(context.getRoot()).isNotNull();
+        }
     }
 
     @Nested
@@ -268,14 +301,14 @@ class ProcessorTest {
         }
 
         @Test
-        void process_nullFields_doesNotSetColumns() {
+        void process_nullFields_defaultsToAllColumns() {
             ReadContext context = new ReadContext();
             context.setRoot(usersTable);
             context.setFields(null);
 
             processor.process(context);
 
-            assertThat(context.getCols()).isNull();
+            assertThat(context.getCols()).isNotNull().hasSize(4);
         }
 
         @Test
@@ -301,13 +334,14 @@ class ProcessorTest {
         }
 
         @Test
-        void process_blankFields_throwsException() {
+        void process_blankFields_defaultsToAllColumns() {
             ReadContext context = new ReadContext();
             context.setRoot(usersTable);
             context.setFields("   ");
 
-            assertThatThrownBy(() -> processor.process(context))
-                    .isInstanceOf(RuntimeException.class);
+            processor.process(context);
+
+            assertThat(context.getCols()).isNotNull().hasSize(4);
         }
 
         @Test
@@ -323,7 +357,7 @@ class ProcessorTest {
         }
 
         @Test
-        void process_nullFields_nullExpressions_doesNotSetColumns() {
+        void process_nullFields_nullExpressions_defaultsToAllColumns() {
             ReadContext context = new ReadContext();
             context.setRoot(usersTable);
             context.setFields(null);
@@ -331,11 +365,11 @@ class ProcessorTest {
 
             processor.process(context);
 
-            assertThat(context.getCols()).isNull();
+            assertThat(context.getCols()).isNotNull().hasSize(4);
         }
 
         @Test
-        void process_nullFields_emptyExpressions_doesNotSetColumns() {
+        void process_nullFields_emptyExpressions_defaultsToAllColumns() {
             ReadContext context = new ReadContext();
             context.setRoot(usersTable);
             context.setFields(null);
@@ -343,7 +377,7 @@ class ProcessorTest {
 
             processor.process(context);
 
-            assertThat(context.getCols()).isNull();
+            assertThat(context.getCols()).isNotNull().hasSize(4);
         }
 
         @Test

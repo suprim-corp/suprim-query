@@ -2,6 +2,7 @@ package dev.suprim.query.jdbc.processor;
 
 import dev.suprim.query.exception.DbErrorCode;
 import dev.suprim.query.exception.DbException;
+import dev.suprim.query.jdbc.config.DatabaseProperties;
 import dev.suprim.query.jdbc.operation.JdbcManager;
 import dev.suprim.query.model.DbTable;
 import dev.suprim.query.model.context.ReadContext;
@@ -9,11 +10,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 
+import static java.util.Objects.isNull;
+
 @Slf4j
 @Order(1)
 @RequiredArgsConstructor
 public class RootTableProcessor implements ReadProcessor {
     private final JdbcManager jdbcManager;
+    private final DatabaseProperties databaseProperties;
 
     @Override
     public void process(ReadContext readContext) throws DbException {
@@ -30,8 +34,15 @@ public class RootTableProcessor implements ReadProcessor {
                     "offset must be >= 0, got: " + readContext.getOffset());
         }
 
+        String dbId = readContext.getDbId();
+        if (isNull(dbId) || dbId.isBlank()) {
+            dbId = databaseProperties.getDefaultDatabaseId();
+            readContext.setDbId(dbId);
+            log.debug("dbId was null, resolved to defaultDatabaseId: {}", dbId);
+        }
+
         DbTable table = jdbcManager.getTable(
-                readContext.getDbId(),
+                dbId,
                 readContext.getSchemaName(),
                 readContext.getTableName()
         );

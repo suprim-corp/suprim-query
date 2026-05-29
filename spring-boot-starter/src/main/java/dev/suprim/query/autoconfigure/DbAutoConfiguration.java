@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import dev.suprim.query.dialect.Dialect;
 import dev.suprim.query.jdbc.config.DatabaseConnectionDetail;
+import dev.suprim.query.jdbc.config.DatabaseProperties;
 import dev.suprim.query.jdbc.config.RoutingDataSource;
 import dev.suprim.query.jdbc.executor.creation.CreationService;
 import dev.suprim.query.jdbc.executor.creation.JdbcCreationService;
@@ -166,8 +167,8 @@ public class DbAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public RootTableProcessor rootTableProcessor(JdbcManager jdbcManager) {
-        return new RootTableProcessor(jdbcManager);
+    public RootTableProcessor rootTableProcessor(JdbcManager jdbcManager, DatabaseProperties databaseProperties) {
+        return new RootTableProcessor(jdbcManager, databaseProperties);
     }
 
     @Bean

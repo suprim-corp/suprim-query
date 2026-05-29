@@ -25,12 +25,16 @@ public class RootTableFieldProcessor implements ReadProcessor {
 
         log.debug("Fields - {}", fields);
 
-        if (isNull(fields)) {
+        if (isNull(fields) || fields.isEmpty()) {
             // If expressions are present, set empty cols for pure aggregation query.
-            // Otherwise, skip (count query).
+            // Otherwise, default to all columns (SELECT *).
             List<ExpressionField> expressions = readContext.getExpressions();
             if (nonNull(expressions) && !expressions.isEmpty()) {
                 readContext.setCols(List.of());
+            } else {
+                readContext.setCols(
+                        new ArrayList<>(readContext.getRoot().buildColumns())
+                );
             }
             return;
         }

@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+import java.util.function.UnaryOperator;
 
 import static java.util.Objects.isNull;
 
@@ -69,5 +70,25 @@ public class ReadContext {
             allTables = new ArrayList<>();
         }
         allTables.add(table);
+    }
+
+    public static class ReadContextBuilder {
+
+        /**
+         * Sets filter from a raw RSQL string.
+         */
+        public ReadContextBuilder filter(String filter) {
+            this.filter = filter;
+            return this;
+        }
+
+        /**
+         * Sets filter from a {@link FilterExpression} (e.g. {@code FilterBuilder}).
+         * Calls {@link FilterExpression#toFilter()} to produce the RSQL string.
+         */
+        public ReadContextBuilder filter(FilterExpression expression) {
+            this.filter = expression.toFilter();
+            return this;
+        }
     }
 }

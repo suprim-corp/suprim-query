@@ -158,6 +158,16 @@ class ContextClassesTest {
     }
 
     @Test
+    void readContext_builder_filterExpression_shouldCallToFilter() {
+        ReadContext ctx = ReadContext.builder()
+                .tableName("users")
+                .filter(() -> "status=='active'")
+                .build();
+
+        assertThat(ctx.getFilter()).isEqualTo("status=='active'");
+    }
+
+    @Test
     void createContext_renderColumns_shouldJoinColumnNames() {
         List<InsertableColumn> cols = List.of(
                 InsertableColumn.builder().columnName("id").build(),

@@ -1,6 +1,7 @@
 package dev.suprim.query.rsql.builder;
 
 import cz.jirutka.rsql.parser.ast.RSQLOperators;
+import dev.suprim.query.model.FilterExpression;
 import dev.suprim.query.rsql.operators.CustomRSQLOperators;
 
 import java.util.ArrayList;
@@ -28,7 +29,7 @@ import java.util.stream.Collectors;
  *     .build();
  * }</pre>
  */
-public class FilterBuilder {
+public class FilterBuilder implements FilterExpression {
 
 	// ==================== TYPES ====================
 
@@ -467,6 +468,11 @@ public class FilterBuilder {
 
 	public String build() {
 		return new Group(operator, List.copyOf(predicates)).toRsql();
+	}
+
+	@Override
+	public String toFilter() {
+		return build();
 	}
 
 	// ==================== INTERNAL ====================

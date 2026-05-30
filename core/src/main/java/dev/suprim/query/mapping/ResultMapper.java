@@ -1,7 +1,9 @@
 package dev.suprim.query.mapping;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,6 +40,25 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ResultMapper {
 
     private final ConcurrentHashMap<Class<?>, TypeMetadata> cache = new ConcurrentHashMap<>();
+    private final ZoneId zoneId;
+
+    /**
+     * Creates a ResultMapper using UTC for temporal conversions.
+     */
+    public ResultMapper() {
+        this(ZoneOffset.UTC);
+    }
+
+    /**
+     * Creates a ResultMapper with a custom zone for temporal conversions
+     * (e.g. Instant↔LocalDateTime). Default UTC is correct for most DB drivers
+     * that store timestamps in UTC. Override if your DB stores local time.
+     *
+     * @param zoneId zone for temporal coercion (must not be null)
+     */
+    public ResultMapper(ZoneId zoneId) {
+        this.zoneId = Objects.requireNonNull(zoneId, "zoneId must not be null");
+    }
 
     /**
      * Maps a single row to the target type.
@@ -104,18 +125,17 @@ public final class ResultMapper {
 
     @SuppressWarnings("unchecked")
     private <T> T mapRecord(Map<String, Object> row, Class<T> type, TypeMetadata metadata) {
+        Map<String, String> normalizedKeys = buildNormalizedKeyMap(row);
         Object[] args = new Object[metadata.components().size()];
 
         for (int i = 0; i < metadata.components().size(); i++) {
             ComponentMapping mapping = metadata.components().get(i);
-            Object rawValue = resolveValue(row, mapping.columnName());
-            args[i] = TypeCoercer.coerce(rawValue, mapping.targetType());
+            Object rawValue = resolveValue(row, mapping.columnName(), normalizedKeys);
+            args[i] = TypeCoercer.coerce(rawValue, mapping.targetType(), zoneId);
         }
 
         try {
-            Constructor<?> constructor = metadata.constructor();
-            constructor.setAccessible(true);
-            return (T) constructor.newInstance(args);
+            return (T) metadata.constructor().newInstance(args);
         } catch (Exception e) {
             throw new MappingException(
                     "Failed to instantiate record " + type.getSimpleName(), e
@@ -126,16 +146,14 @@ public final class ResultMapper {
     @SuppressWarnings("unchecked")
     private <T> T mapPojo(Map<String, Object> row, Class<T> type, TypeMetadata metadata) {
         try {
-            Constructor<?> constructor = metadata.constructor();
-            constructor.setAccessible(true);
-            T instance = (T) constructor.newInstance();
+            Map<String, String> normalizedKeys = buildNormalizedKeyMap(row);
+            T instance = (T) metadata.constructor().newInstance();
 
             for (ComponentMapping mapping : metadata.components()) {
-                Object rawValue = resolveValue(row, mapping.columnName());
-                Object coerced = TypeCoercer.coerce(rawValue, mapping.targetType());
+                Object rawValue = resolveValue(row, mapping.columnName(), normalizedKeys);
+                Object coerced = TypeCoercer.coerce(rawValue, mapping.targetType(), zoneId);
 
                 Field field = mapping.field();
-                field.setAccessible(true);
                 field.set(instance, coerced);
             }
 
@@ -150,16 +168,27 @@ public final class ResultMapper {
     }
 
     /**
-     * Resolves value from row: exact key match first, then case-insensitive fallback.
+     * Builds a lookup map from lowercased column name to the original key in the row.
+     * Built once per row to avoid O(N×M) linear scan during case-insensitive fallback.
      */
-    private Object resolveValue(Map<String, Object> row, String columnName) {
+    private Map<String, String> buildNormalizedKeyMap(Map<String, Object> row) {
+        Map<String, String> normalized = new HashMap<>(row.size());
+        for (String key : row.keySet()) {
+            normalized.putIfAbsent(key.toLowerCase(), key);
+        }
+        return normalized;
+    }
+
+    /**
+     * Resolves value from row: exact key match first (O(1)), then lowercased lookup (O(1)).
+     */
+    private Object resolveValue(Map<String, Object> row, String columnName, Map<String, String> normalizedKeys) {
         if (row.containsKey(columnName)) {
             return row.get(columnName);
         }
-        for (Map.Entry<String, Object> entry : row.entrySet()) {
-            if (entry.getKey().equalsIgnoreCase(columnName)) {
-                return entry.getValue();
-            }
+        String originalKey = normalizedKeys.get(columnName.toLowerCase());
+        if (originalKey != null) {
+            return row.get(originalKey);
         }
         return null;
     }

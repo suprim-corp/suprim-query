@@ -53,6 +53,7 @@ record TypeMetadata(
 
         try {
             Constructor<?> constructor = type.getDeclaredConstructor(paramTypes);
+            constructor.setAccessible(true);
             return new TypeMetadata(true, constructor, List.copyOf(mappings));
         } catch (NoSuchMethodException e) {
             throw new MappingException(
@@ -67,11 +68,13 @@ record TypeMetadata(
 
         for (Field field : fieldMap.values()) {
             String columnName = resolveColumnName(field);
+            field.setAccessible(true);
             mappings.add(new ComponentMapping(columnName, field.getType(), field));
         }
 
         try {
             Constructor<?> constructor = type.getDeclaredConstructor();
+            constructor.setAccessible(true);
             return new TypeMetadata(false, constructor, List.copyOf(mappings));
         } catch (NoSuchMethodException e) {
             throw new MappingException(
@@ -122,6 +125,9 @@ record TypeMetadata(
     /**
      * Converts camelCase to snake_case by extending Jackson's SnakeCaseStrategy
      * to access the protected {@code translate()} method.
+     *
+     * <p>Reuses Jackson's battle-tested snake_case logic instead of rolling our own,
+     * avoiding edge-case bugs with consecutive uppercase letters, digits, etc.
      */
     private static final class SnakeCaseConverter extends PropertyNamingStrategies.SnakeCaseStrategy {
 

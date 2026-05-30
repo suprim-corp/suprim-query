@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
@@ -27,15 +28,30 @@ final class TypeCoercer {
     }
 
     /**
-     * Coerces a raw DB value to the target Java type.
+     * Coerces a raw DB value to the target Java type using UTC for temporal conversions.
      *
      * @param rawValue   value from the result map (may be null)
      * @param targetType desired Java type
      * @return coerced value, or null/primitive-default if rawValue is null
      * @throws MappingException if coercion is not possible
      */
-    @SuppressWarnings("unchecked")
     static Object coerce(Object rawValue, Class<?> targetType) {
+        return coerce(rawValue, targetType, ZoneOffset.UTC);
+    }
+
+    /**
+     * Coerces a raw DB value to the target Java type using the specified zone for temporal conversions.
+     *
+     * @param rawValue   value from the result map (may be null)
+     * @param targetType desired Java type
+     * @param zoneId     zone used for Instant↔LocalDateTime conversions (defaults to UTC if null)
+     * @return coerced value, or null/primitive-default if rawValue is null
+     * @throws MappingException if coercion is not possible
+     */
+    @SuppressWarnings("unchecked")
+    static Object coerce(Object rawValue, Class<?> targetType, ZoneId zoneId) {
+        ZoneId effectiveZone = (zoneId != null) ? zoneId : ZoneOffset.UTC;
+
         if (rawValue == null) {
             return defaultForPrimitive(targetType);
         }
@@ -67,21 +83,19 @@ final class TypeCoercer {
 
         // Temporal coercions
         if (rawValue instanceof Timestamp timestamp) {
-            return coerceTimestamp(timestamp, targetType);
+            return coerceTimestamp(timestamp, targetType, effectiveZone);
         }
         if (rawValue instanceof java.sql.Date sqlDate) {
-            if (targetType == LocalDate.class) {
-                return sqlDate.toLocalDate();
-            }
+            return coerceSqlDate(sqlDate, targetType);
         }
         if (rawValue instanceof OffsetDateTime odt) {
             return coerceOffsetDateTime(odt, targetType);
         }
         if (rawValue instanceof Instant instant) {
-            return coerceInstant(instant, targetType);
+            return coerceInstant(instant, targetType, effectiveZone);
         }
         if (rawValue instanceof LocalDateTime ldt) {
-            return coerceLocalDateTime(ldt, targetType);
+            return coerceLocalDateTime(ldt, targetType, effectiveZone);
         }
 
         // Boolean
@@ -110,6 +124,7 @@ final class TypeCoercer {
 
     // --- Number ---
 
+    // package-private for direct unit testing
     static Object coerceNumber(Number number, Class<?> targetType) {
         if (targetType == int.class || targetType == Integer.class) {
             return number.intValue();
@@ -154,7 +169,7 @@ final class TypeCoercer {
 
     // --- Temporal ---
 
-    private static Object coerceTimestamp(Timestamp timestamp, Class<?> targetType) {
+    private static Object coerceTimestamp(Timestamp timestamp, Class<?> targetType, ZoneId zoneId) {
         if (targetType == LocalDateTime.class) {
             return timestamp.toLocalDateTime();
         }
@@ -162,7 +177,7 @@ final class TypeCoercer {
             return timestamp.toInstant();
         }
         if (targetType == OffsetDateTime.class) {
-            return timestamp.toInstant().atOffset(ZoneOffset.UTC);
+            return timestamp.toInstant().atOffset(ZoneOffset.from(zoneId.getRules().getOffset(timestamp.toInstant())));
         }
         if (targetType == LocalDate.class) {
             return timestamp.toLocalDateTime().toLocalDate();
@@ -172,6 +187,22 @@ final class TypeCoercer {
         }
         throw new MappingException(
                 "Cannot coerce Timestamp to " + targetType.getSimpleName()
+        );
+    }
+
+    private static Object coerceSqlDate(java.sql.Date sqlDate, Class<?> targetType) {
+        if (targetType == LocalDate.class) {
+            return sqlDate.toLocalDate();
+        }
+        if (targetType == LocalDateTime.class) {
+            return sqlDate.toLocalDate().atStartOfDay();
+        }
+        if (targetType == Instant.class) {
+            return sqlDate.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
+        }
+        throw new MappingException(
+                "Cannot coerce java.sql.Date to " + targetType.getSimpleName()
+                        + ". Supported targets: LocalDate, LocalDateTime, Instant."
         );
     }
 
@@ -193,12 +224,12 @@ final class TypeCoercer {
         );
     }
 
-    private static Object coerceInstant(Instant instant, Class<?> targetType) {
+    private static Object coerceInstant(Instant instant, Class<?> targetType, ZoneId zoneId) {
         if (targetType == LocalDateTime.class) {
-            return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+            return LocalDateTime.ofInstant(instant, zoneId);
         }
         if (targetType == OffsetDateTime.class) {
-            return instant.atOffset(ZoneOffset.UTC);
+            return instant.atOffset(ZoneOffset.from(zoneId.getRules().getOffset(instant)));
         }
         if (targetType == Timestamp.class) {
             return Timestamp.from(instant);
@@ -211,12 +242,12 @@ final class TypeCoercer {
         );
     }
 
-    private static Object coerceLocalDateTime(LocalDateTime ldt, Class<?> targetType) {
+    private static Object coerceLocalDateTime(LocalDateTime ldt, Class<?> targetType, ZoneId zoneId) {
         if (targetType == Instant.class) {
-            return ldt.toInstant(ZoneOffset.UTC);
+            return ldt.atZone(zoneId).toInstant();
         }
         if (targetType == OffsetDateTime.class) {
-            return ldt.atOffset(ZoneOffset.UTC);
+            return ldt.atZone(zoneId).toOffsetDateTime();
         }
         if (targetType == Timestamp.class) {
             return Timestamp.valueOf(ldt);

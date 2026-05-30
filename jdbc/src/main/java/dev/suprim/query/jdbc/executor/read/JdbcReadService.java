@@ -175,6 +175,7 @@ public record JdbcReadService(
             ReadContext readContext,
             Class<T> type
     ) throws DbException {
+        // TODO: consider streaming/chunked mapping for large result sets to avoid double allocation
         List<Map<String, Object>> rows = findAll(readContext);
         return resultMapper.mapList(rows, type);
     }

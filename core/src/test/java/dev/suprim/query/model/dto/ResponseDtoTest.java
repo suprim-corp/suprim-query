@@ -88,7 +88,7 @@ class ResponseDtoTest {
     @Test
     void page_shouldHoldAllFields() {
         List<Map<String, Object>> data = List.of(Map.of("id", 1L), Map.of("id", 2L));
-        Page page = Page.builder()
+        Page<Map<String, Object>> page = Page.<Map<String, Object>>builder()
                 .data(data)
                 .total(10L)
                 .limit(2)
@@ -106,7 +106,7 @@ class ResponseDtoTest {
     @Test
     void page_lastPage_hasNextFalse() {
         List<Map<String, Object>> data = List.of(Map.of("id", 9L), Map.of("id", 10L));
-        Page page = Page.builder()
+        Page<Map<String, Object>> page = Page.<Map<String, Object>>builder()
                 .data(data)
                 .total(10L)
                 .limit(2)
@@ -119,7 +119,7 @@ class ResponseDtoTest {
 
     @Test
     void page_emptyData_shouldWork() {
-        Page page = Page.builder()
+        Page<Map<String, Object>> page = Page.<Map<String, Object>>builder()
                 .data(List.of())
                 .total(0L)
                 .limit(10)
@@ -134,7 +134,7 @@ class ResponseDtoTest {
 
     @Test
     void page_nullData_shouldDefaultToEmptyList() {
-        Page page = Page.builder()
+        Page<Map<String, Object>> page = Page.<Map<String, Object>>builder()
                 .data(null)
                 .total(0L)
                 .limit(10)
@@ -148,7 +148,7 @@ class ResponseDtoTest {
     @Test
     void page_dataIsUnmodifiable() {
         List<Map<String, Object>> mutableData = new java.util.ArrayList<>(List.of(Map.of("id", 1L)));
-        Page page = Page.builder()
+        Page<Map<String, Object>> page = Page.<Map<String, Object>>builder()
                 .data(mutableData)
                 .total(1L)
                 .limit(10)

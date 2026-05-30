@@ -15,6 +15,7 @@ import dev.suprim.query.jdbc.executor.raw.JdbcRawQueryService;
 import dev.suprim.query.jdbc.executor.raw.RawQueryService;
 import dev.suprim.query.jdbc.executor.read.JdbcReadService;
 import dev.suprim.query.jdbc.executor.read.ReadService;
+import dev.suprim.query.mapping.ResultMapper;
 import dev.suprim.query.jdbc.executor.update.JdbcUpdateService;
 import dev.suprim.query.jdbc.executor.update.UpdateService;
 import dev.suprim.query.jdbc.operation.DbOperationService;
@@ -191,13 +192,26 @@ public class DbAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public ResultMapper resultMapper() {
+        return new ResultMapper();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ReadService readService(
             JdbcManager jdbcManager,
             SqlCreatorTemplate sqlCreatorTemplate,
             List<ReadProcessor> processorList,
-            DbOperationService dbOperationService
+            DbOperationService dbOperationService,
+            ResultMapper resultMapper
     ) {
-        return new JdbcReadService(jdbcManager, dbOperationService, processorList, sqlCreatorTemplate);
+        return JdbcReadService.builder()
+                              .jdbcManager(jdbcManager)
+                              .dbOperationService(dbOperationService)
+                              .processorList(processorList)
+                              .sqlCreatorTemplate(sqlCreatorTemplate)
+                              .resultMapper(resultMapper)
+                              .build();
     }
 
     @Bean

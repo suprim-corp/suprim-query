@@ -210,7 +210,7 @@ List<BulkUpdate> updates = List.of(
 		new BulkUpdate(Map.of("status", "refunded", "refunded_at", "2026-05-05"), "id==103")
 );
 
-int totalUpdated = updateService.patchBulk("main", "public", "orders", updates);
+		int totalUpdated = updateService.patchBulk("main", "public", "orders", updates);
 // If any single update fails, all changes are rolled back
 ```
 
@@ -233,10 +233,10 @@ int rowsDeleted = deleteService.delete(
 ```java
 // Multiple filters — each scopes a separate DELETE, all in one transaction
 List<String> filters = List.of(
-		"status==expired;created_at=lt=2025-01-01",
-		"status==cancelled;updated_at=lt=2025-06-01",
-		"id==999"
-);
+				"status==expired;created_at=lt=2025-01-01",
+				"status==cancelled;updated_at=lt=2025-06-01",
+				"id==999"
+		);
 
 int totalDeleted = deleteService.deleteBulk("main", "public", "sessions", filters);
 // If any single delete fails, all changes are rolled back
@@ -254,7 +254,7 @@ db:
     soft-delete:
         enabled: true
         column: deleted_at          # optional, defaults to "deleted_at"
-        tables:                     # optional, if empty applies to ALL tables
+        tables: # optional, if empty applies to ALL tables
             - users
             - orders
 ```
@@ -277,16 +277,17 @@ List<Map<String, Object>> allUsers = readService.findAll(context);
 
 #### Behavior summary
 
-| Operation | Soft-delete enabled | Soft-delete disabled |
-|-----------|--------------------|--------------------|
-| `readService.findAll(ctx)` | Appends `AND deleted_at IS NULL` | No change |
-| `readService.findAll(ctx)` with `includeSoftDeleted(true)` | No filter appended | No change |
-| `deleteService.delete(...)` | `UPDATE table SET deleted_at = NOW() WHERE ...` | `DELETE FROM table WHERE ...` |
-| `deleteService.deleteBulk(...)` | Same rewrite per filter | Same as above |
+| Operation                                                  | Soft-delete enabled                             | Soft-delete disabled          |
+|------------------------------------------------------------|-------------------------------------------------|-------------------------------|
+| `readService.findAll(ctx)`                                 | Appends `AND deleted_at IS NULL`                | No change                     |
+| `readService.findAll(ctx)` with `includeSoftDeleted(true)` | No filter appended                              | No change                     |
+| `deleteService.delete(...)`                                | `UPDATE table SET deleted_at = NOW() WHERE ...` | `DELETE FROM table WHERE ...` |
+| `deleteService.deleteBulk(...)`                            | Same rewrite per filter                         | Same as above                 |
 
 ### Upsert (INSERT ... ON CONFLICT)
 
 ```java
+
 @Autowired
 private CreationService creationService;
 
@@ -329,6 +330,7 @@ For cases where the query builder doesn't cover your needs, use `RawQueryService
 Always use named parameters (`:paramName`) — never concatenate user input into SQL.
 
 ```java
+
 @Autowired
 private RawQueryService rawQueryService;
 
@@ -414,30 +416,37 @@ String filter = FilterBuilder.and()
 		                              .eq("type", "order")
 		                              .raw("total=gt=100;total=lt=500")
 		                              .build();
+
+		// PostgreSQL array contains (TEXT[] columns)
+		String arrayFilter = FilterBuilder.and()
+		                                  .eqIfPresent("status", filter.status())
+		                                  .arrayContainsIfPresent("question_types", filter.questionType())
+		                                  .build();
 ```
 
 ### Filter → SQL mapping
 
 Shows what SQL each RSQL filter generates (assuming table `users` with alias `t0`):
 
-| FilterBuilder code                              | RSQL output                                  | Generated SQL WHERE                         |
-|-------------------------------------------------|----------------------------------------------|---------------------------------------------|
-| `.eq("status", "active")`                       | `status=='active'`                           | `t0."status" = :status`                     |
-| `.neq("role", "guest")`                         | `role!='guest'`                              | `t0."role" <> :role`                        |
-| `.gt("age", "18")`                              | `age=gt='18'`                                | `t0."age" > :age`                           |
-| `.gte("price", "100")`                          | `price=ge='100'`                             | `t0."price" >= :price`                      |
-| `.lt("stock", "5")`                             | `stock=lt='5'`                               | `t0."stock" < :stock`                       |
-| `.lte("rating", "3")`                           | `rating=le='3'`                              | `t0."rating" <= :rating`                    |
-| `.in("status", "active", "pending")`            | `status=in=(active,pending)`                 | `t0."status" IN (:status)`                  |
-| `.notIn("type", "draft", "archived")`           | `type=out=(draft,archived)`                  | `t0."type" NOT IN (:type)`                  |
-| `.like("name", "john")`                         | `name=like='john'`                           | `t0."name" LIKE :name` (value: `%john%`)    |
-| `.ilike("email", "JOHN")`                       | `email=ilike='JOHN'`                         | `t0."email" ILIKE :email` (value: `%JOHN%`) |
-| `.startWith("name", "Jo")`                      | `name=startWith='Jo'`                        | `t0."name" LIKE :name` (value: `Jo%`)       |
-| `.endWith("email", ".com")`                     | `email=endWith='.com'`                       | `t0."email" LIKE :email` (value: `%.com`)   |
-| `.isNull("deleted_at")`                         | `deleted_at=isnull='true'`                   | `t0."deleted_at" IS NULL`                   |
-| `.isNotNull("verified_at")`                     | `verified_at=nn='true'`                      | `t0."verified_at" IS NOT NULL`              |
-| `.jsonbContains("metadata", "tier", "premium")` | `metadata=jsonbContain='{"tier":"premium"}'` | `t0."metadata" @> :metadata::jsonb`         |
-| `.jsonbKeyExists("settings", "theme")`          | `settings=jbKeyExist='theme'`                | `t0."settings" ? :settings`                 |
+| FilterBuilder code                              | RSQL output                                  | Generated SQL WHERE                          |
+|-------------------------------------------------|----------------------------------------------|----------------------------------------------|
+| `.eq("status", "active")`                       | `status=='active'`                           | `t0."status" = :status`                      |
+| `.neq("role", "guest")`                         | `role!='guest'`                              | `t0."role" <> :role`                         |
+| `.gt("age", "18")`                              | `age=gt='18'`                                | `t0."age" > :age`                            |
+| `.gte("price", "100")`                          | `price=ge='100'`                             | `t0."price" >= :price`                       |
+| `.lt("stock", "5")`                             | `stock=lt='5'`                               | `t0."stock" < :stock`                        |
+| `.lte("rating", "3")`                           | `rating=le='3'`                              | `t0."rating" <= :rating`                     |
+| `.in("status", "active", "pending")`            | `status=in=(active,pending)`                 | `t0."status" IN (:status)`                   |
+| `.notIn("type", "draft", "archived")`           | `type=out=(draft,archived)`                  | `t0."type" NOT IN (:type)`                   |
+| `.like("name", "john")`                         | `name=like='john'`                           | `t0."name" LIKE :name` (value: `%john%`)     |
+| `.ilike("email", "JOHN")`                       | `email=ilike='JOHN'`                         | `t0."email" ILIKE :email` (value: `%JOHN%`)  |
+| `.startWith("name", "Jo")`                      | `name=startWith='Jo'`                        | `t0."name" LIKE :name` (value: `Jo%`)        |
+| `.endWith("email", ".com")`                     | `email=endWith='.com'`                       | `t0."email" LIKE :email` (value: `%.com`)    |
+| `.isNull("deleted_at")`                         | `deleted_at=isnull='true'`                   | `t0."deleted_at" IS NULL`                    |
+| `.isNotNull("verified_at")`                     | `verified_at=nn='true'`                      | `t0."verified_at" IS NOT NULL`               |
+| `.jsonbContains("metadata", "tier", "premium")` | `metadata=jsonbContain='{"tier":"premium"}'` | `t0."metadata" @> :metadata::jsonb`          |
+| `.jsonbKeyExists("settings", "theme")`          | `settings=jbKeyExist='theme'`                | `t0."settings" ? :settings`                  |
+| `.arrayContains("question_types", "CLOZE")`     | `question_types=arrayContains='CLOZE'`       | `:question_types = ANY(t0."question_types")` |
 
 **Compound filters:**
 
@@ -573,41 +582,44 @@ import dev.suprim.query.jdbc.config.DatabaseContextHolder;
 DatabaseContextHolder.setCurrentDbId("tenant_abc");
 
 try{
-    // All queries now route to tenant_abc's datasource
-    List<Map<String, Object>> data = readService.findAll(
-            ReadContext.builder()
-                       .dbId("tenant_abc")
-                       .tableName("invoices")
-                       .fields("*")
-                       .build()
-    );
-} finally {
-		DatabaseContextHolder.clear();
+// All queries now route to tenant_abc's datasource
+List<Map<String, Object>> data = readService.findAll(
+		ReadContext.builder()
+		           .dbId("tenant_abc")
+		           .tableName("invoices")
+		           .fields("*")
+		           .build()
+);
+}finally{
+		DatabaseContextHolder.
+
+clear();
 }
 ```
 
 ## RSQL Operators
 
-| Operator       | Description            | Example                        |
-|----------------|------------------------|--------------------------------|
-| `==`           | Equal                  | `status==active`               |
-| `!=`           | Not equal              | `role!=guest`                  |
-| `=gt=`         | Greater than           | `age=gt=18`                    |
-| `=ge=`         | Greater than or equal  | `price=ge=100`                 |
-| `=lt=`         | Less than              | `stock=lt=5`                   |
-| `=le=`         | Less than or equal     | `rating=le=3`                  |
-| `=in=`         | In list                | `status=in=(active,pending)`   |
-| `=out=`        | Not in list            | `type=out=(draft,archived)`    |
-| `=like=`       | LIKE pattern           | `name=like=john`               |
-| `=ilike=`      | Case-insensitive LIKE  | `email=ilike=JOHN`             |
-| `=startWith=`  | Starts with            | `name=startWith=Jo`            |
-| `=endWith=`    | Ends with              | `email=endWith=.com`           |
-| `=isnull=`     | IS NULL                | `deleted_at=isnull=true`       |
-| `=nn=`         | IS NOT NULL            | `verified_at=nn=true`          |
-| `=notlike=`    | NOT LIKE               | `name=notlike=test`            |
-| `=jbc=`        | JSONB contains (`@>`)  | `metadata=jbc={"key":"value"}` |
-| `=jbKeyExist=` | JSONB key exists (`?`) | `settings=jbKeyExist=theme`    |
-| `=jba=`        | JSONB arrow (`->>`)    | `data.name=jba=John`           |
+| Operator                   | Description                | Example                        |
+|----------------------------|----------------------------|--------------------------------|
+| `==`                       | Equal                      | `status==active`               |
+| `!=`                       | Not equal                  | `role!=guest`                  |
+| `=gt=`                     | Greater than               | `age=gt=18`                    |
+| `=ge=`                     | Greater than or equal      | `price=ge=100`                 |
+| `=lt=`                     | Less than                  | `stock=lt=5`                   |
+| `=le=`                     | Less than or equal         | `rating=le=3`                  |
+| `=in=`                     | In list                    | `status=in=(active,pending)`   |
+| `=out=`                    | Not in list                | `type=out=(draft,archived)`    |
+| `=like=`                   | LIKE pattern               | `name=like=john`               |
+| `=ilike=`                  | Case-insensitive LIKE      | `email=ilike=JOHN`             |
+| `=startWith=`              | Starts with                | `name=startWith=Jo`            |
+| `=endWith=`                | Ends with                  | `email=endWith=.com`           |
+| `=isnull=`                 | IS NULL                    | `deleted_at=isnull=true`       |
+| `=nn=`                     | IS NOT NULL                | `verified_at=nn=true`          |
+| `=notlike=`                | NOT LIKE                   | `name=notlike=test`            |
+| `=jbc=`                    | JSONB contains (`@>`)      | `metadata=jbc={"key":"value"}` |
+| `=jbKeyExist=`             | JSONB key exists (`?`)     | `settings=jbKeyExist=theme`    |
+| `=jba=`                    | JSONB arrow (`->>`)        | `data.name=jba=John`           |
+| `=arrayContains=` / `=ac=` | Array contains (`= ANY()`) | `question_types=ac=CLOZE`      |
 
 Logical operators: `;` (AND), `,` (OR). Use parentheses for grouping.
 

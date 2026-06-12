@@ -35,6 +35,7 @@ public class RSQLOperatorHandlers {
         map.put(CustomRSQLOperators.NOT_LIKE.getSymbol(), new NotLikeOperatorHandler());
         map.put(CustomRSQLOperators.NOT_NULL.getSymbol(), new IsNotNullOperatorHandler());
         map.put(CustomRSQLOperators.JSONB_ARROW.getSymbol(), new JsonbArrowOperatorHandler());
+        map.put(CustomRSQLOperators.ARRAY_CONTAINS.getSymbol(), new ArrayContainsOperatorHandler());
         OPERATOR_HANDLER_MAP = Collections.unmodifiableMap(map);
     }
 

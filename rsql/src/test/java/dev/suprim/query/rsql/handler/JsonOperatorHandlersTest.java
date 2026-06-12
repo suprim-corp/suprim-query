@@ -230,4 +230,39 @@ class JsonOperatorHandlersTest extends OperatorHandlerTestBase {
                 .isInstanceOf(DbException.class)
                 .hasMessageContaining("JSONB ?? value contains invalid characters");
     }
+
+    // ArrayContainsOperatorHandler tests
+    @Test
+    void arrayContains_withAlias_shouldReturnCorrectSql() throws DbException {
+        ArrayContainsOperatorHandler handler = new ArrayContainsOperatorHandler();
+        DbColumn arrayColumn = createColumn("question_types", "text[]", String.class);
+
+        String result = handler.handle(dialect, arrayColumn, dbWhere, "CLOZE", String.class, paramMap);
+
+        assertThat(result).isEqualTo(":t_question_types = ANY(t.question_types)");
+        assertThat(paramMap).containsEntry("t_question_types", "CLOZE");
+    }
+
+    @Test
+    void arrayContains_withoutAlias_shouldReturnCorrectSql() throws DbException {
+        ArrayContainsOperatorHandler handler = new ArrayContainsOperatorHandler();
+        DbColumn arrayColumn = createColumn("question_types", "text[]", String.class);
+
+        String result = handler.handle(dialectNoAlias, arrayColumn, dbWhere, "CLOZE", String.class, paramMap);
+
+        assertThat(result).isEqualTo(":question_types = ANY(question_types)");
+        assertThat(paramMap).containsEntry("question_types", "CLOZE");
+    }
+
+    @Test
+    void arrayContains_duplicateParam_shouldDeduplicateKey() throws DbException {
+        ArrayContainsOperatorHandler handler = new ArrayContainsOperatorHandler();
+        DbColumn arrayColumn = createColumn("tags", "text[]", String.class);
+        paramMap.put("t_tags", "existing");
+
+        String result = handler.handle(dialect, arrayColumn, dbWhere, "java", String.class, paramMap);
+
+        assertThat(result).isEqualTo(":t_tags_1 = ANY(t.tags)");
+        assertThat(paramMap).containsEntry("t_tags_1", "java");
+    }
 }

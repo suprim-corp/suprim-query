@@ -311,6 +311,17 @@ public class FilterBuilder implements FilterExpression {
 		return this;
 	}
 
+	public FilterBuilder arrayContains(String field, String value) {
+		predicates.add(
+				new Comparison(
+						field,
+						CustomRSQLOperators.ARRAY_CONTAINS.getSymbol(),
+						List.of(value)
+				)
+		);
+		return this;
+	}
+
 	// ==================== CONDITIONAL (null-safe) ====================
 
 	/**
@@ -430,6 +441,13 @@ public class FilterBuilder implements FilterExpression {
 	public FilterBuilder notInIfPresent(String field, String... values) {
 		if (values != null && values.length > 0) {
 			notIn(field, values);
+		}
+		return this;
+	}
+
+	public FilterBuilder arrayContainsIfPresent(String field, String value) {
+		if (value != null && !value.isBlank()) {
+			arrayContains(field, value);
 		}
 		return this;
 	}

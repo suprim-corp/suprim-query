@@ -303,6 +303,12 @@ class FilterBuilderTest {
 			String result = FilterBuilder.and().jsonbKeyExists("data", "name").build();
 			assertThat(result).isEqualTo("data=jbKeyExist='name'");
 		}
+
+		@Test
+		void arrayContains_shouldUseArrayContainsOperator() {
+			String result = FilterBuilder.and().arrayContains("question_types", "CLOZE").build();
+			assertThat(result).isEqualTo("question_types=arrayContains='CLOZE'");
+		}
 	}
 
 	// ==================== Builder: nesting ====================
@@ -660,6 +666,30 @@ class FilterBuilderTest {
 		void notInIfPresent_empty_shouldSkip() {
 			String result = FilterBuilder.and()
 					.notInIfPresent("type")
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void arrayContainsIfPresent_nonBlank_shouldAddPredicate() {
+			String result = FilterBuilder.and()
+					.arrayContainsIfPresent("question_types", "CLOZE")
+					.build();
+			assertThat(result).isEqualTo("question_types=arrayContains='CLOZE'");
+		}
+
+		@Test
+		void arrayContainsIfPresent_null_shouldSkip() {
+			String result = FilterBuilder.and()
+					.arrayContainsIfPresent("question_types", null)
+					.build();
+			assertThat(result).isEmpty();
+		}
+
+		@Test
+		void arrayContainsIfPresent_blank_shouldSkip() {
+			String result = FilterBuilder.and()
+					.arrayContainsIfPresent("question_types", "   ")
 					.build();
 			assertThat(result).isEmpty();
 		}

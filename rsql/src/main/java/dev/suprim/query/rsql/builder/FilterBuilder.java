@@ -311,7 +311,12 @@ public class FilterBuilder implements FilterExpression {
 		return this;
 	}
 
+	/**
+	 * Filters rows where the PostgreSQL array column contains the given value.
+	 * Generates: {@code field=arrayContains='value'} → SQL: {@code :param = ANY(column)}.
+	 */
 	public FilterBuilder arrayContains(String field, String value) {
+		Objects.requireNonNull(value, "value must not be null");
 		predicates.add(
 				new Comparison(
 						field,
@@ -445,6 +450,9 @@ public class FilterBuilder implements FilterExpression {
 		return this;
 	}
 
+	/**
+	 * Adds an array-contains predicate only if value is non-null and non-blank.
+	 */
 	public FilterBuilder arrayContainsIfPresent(String field, String value) {
 		if (value != null && !value.isBlank()) {
 			arrayContains(field, value);

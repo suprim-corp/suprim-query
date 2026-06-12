@@ -6,6 +6,9 @@ import dev.suprim.query.model.DbWhere;
 
 import java.util.Map;
 
+/**
+ * Handles =arrayContains= / =ac=. Generates :param = ANY(column) for PostgreSQL TEXT[] columns.
+ */
 public class ArrayContainsOperatorHandler implements OperatorHandler {
 
 	@Override

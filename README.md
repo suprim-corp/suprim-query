@@ -590,10 +590,8 @@ List<Map<String, Object>> data = readService.findAll(
 		           .fields("*")
 		           .build()
 );
-}finally{
-		DatabaseContextHolder.
-
-clear();
+} finally {
+		DatabaseContextHolder.clear();
 }
 ```
 

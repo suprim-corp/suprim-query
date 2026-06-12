@@ -73,6 +73,11 @@ public class CustomRSQLOperators extends RSQLOperators {
             false
     );
 
+    public static final ComparisonOperator ARRAY_CONTAINS = new ComparisonOperator(
+            new String[]{"=arrayContains=", "=ac="},
+            false
+    );
+
     public static Set<ComparisonOperator> customOperators() {
         Set<ComparisonOperator> comparisonOperators = RSQLOperators.defaultOperators();
         comparisonOperators.addAll(
@@ -89,7 +94,8 @@ public class CustomRSQLOperators extends RSQLOperators {
                         JSONB_KEY_EXISTS,
                         JSON_CONTAINS_IN_ARRAY,
                         NOT_LIKE,
-                        JSONB_ARROW
+                        JSONB_ARROW,
+                        ARRAY_CONTAINS
                 )
         );
         return comparisonOperators;

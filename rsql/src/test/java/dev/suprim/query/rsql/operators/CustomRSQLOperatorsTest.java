@@ -99,6 +99,12 @@ class CustomRSQLOperatorsTest {
     }
 
     @Test
+    void arrayContains_shouldHaveMultipleSymbols() {
+        assertThat(CustomRSQLOperators.ARRAY_CONTAINS.getSymbols()).contains("=arrayContains=", "=ac=");
+        assertThat(CustomRSQLOperators.ARRAY_CONTAINS.isMultiValue()).isFalse();
+    }
+
+    @Test
     void customOperators_shouldIncludeAllDefaultOperators() {
         Set<ComparisonOperator> customOps = CustomRSQLOperators.customOperators();
         Set<ComparisonOperator> defaultOps = RSQLOperators.defaultOperators();
@@ -123,7 +129,8 @@ class CustomRSQLOperatorsTest {
                 CustomRSQLOperators.JSONB_KEY_EXISTS,
                 CustomRSQLOperators.JSON_CONTAINS_IN_ARRAY,
                 CustomRSQLOperators.NOT_LIKE,
-                CustomRSQLOperators.JSONB_ARROW
+                CustomRSQLOperators.JSONB_ARROW,
+                CustomRSQLOperators.ARRAY_CONTAINS
         );
     }
 
@@ -132,7 +139,7 @@ class CustomRSQLOperatorsTest {
         Set<ComparisonOperator> customOps = CustomRSQLOperators.customOperators();
         Set<ComparisonOperator> defaultOps = RSQLOperators.defaultOperators();
 
-        // 13 custom operators + default operators
-        assertThat(customOps).hasSize(defaultOps.size() + 13);
+        // 14 custom operators + default operators
+        assertThat(customOps).hasSize(defaultOps.size() + 14);
     }
 }
